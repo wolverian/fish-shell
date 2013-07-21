@@ -328,9 +328,10 @@ class FishConfigHTTPRequestHandler(SimpleHTTPServer.SimpleHTTPRequestHandler):
 
         # Not sure why fish sometimes returns this with newlines
         if "\n" in out:
-            return out.split('\n')
+            names = out.split('\n')
         else:
-            return out.strip().split(', ')
+            names = out.strip().split(', ')
+        return [{"name": n} for n in names]
 
     def do_get_variable_names(self, cmd):
         " Given a command like 'set -U' return all the variable names "
