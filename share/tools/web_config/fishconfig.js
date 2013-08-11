@@ -164,6 +164,7 @@ function switch_tab(new_tab) {
 	} else if (new_tab == 'tab_variables') {
 		submodel = gModel.vars();
 	} else if (new_tab == 'tab_history') {
+		submodel = gModel.history();
 	} else {
 		alert("Unknown tab");
 	}
@@ -1046,6 +1047,12 @@ function FishFunctionsModel() {
 		run_get_request_with_bulk_handler('/functions/', function(json_contents){
 			console.log(json_contents)
 			self.functions(json_contents);
+			
+			/* Select the first function if we don't have one selected already */
+			if (self.functions() && ! self.selected_function_name())
+			{
+				self.select_function(self.functions()[0])
+			}
 		});
 	};
 	
@@ -1069,33 +1076,74 @@ function FishVariablesModel() {
 			for (i=0; i < json_contents.length; i++)
 			{
 				json_contents[i].index = i;
-				json_contents[i].truncate = true;
+				
+				// Initially we truncate. Don't bother to store it since usually it won't be set.
+				//json_contents[i].no_truncate = false;
 			}
 			self.variables(json_contents);
 		});
 	};
 	
+	/* Toggle whether the variable is truncated. The value is not observable so we have to replace it. */
 	self.toggle_truncation = function(orig){
 		var copy = orig.slice(0);
-		copy.truncate = ! orig.truncate;
+		copy.no_truncate = ! orig.no_truncate;
 		self.variables.replace(orig, copy);
 	};
 	
 	self.clear = function(){
 		self.variables([]);
 	};
+}
 
+function FishHistoryModel() {
+	var self = this;
+	self.name = 'history';
+	
+	self.history = ko.observableArray();
+	
+	self.load = function(){
+		run_get_request_with_bulk_handler('/history/', function(json_contents){
+			//console.log(json_contents);
+			var start = new Date().getTime();
+			var i;
+			var history_objs = new Array();
+			for (i=0; i < json_contents.length; i++)
+			{
+				// We are given text; we store it as a one element array so that we can make a 'copy' easily for truncation
+				var history_obj = [json_contents[i]];
+				history_obj.identifier = i
+				history_objs.push(history_obj)				
+			}
+			self.history(history_objs);
+			var end = new Date().getTime();
+			console.log("time: "  + (end - start));
+		});
+	};
+	
+	/* Toggle whether the variable is truncated. The value is not observable so we have to replace it. */
+	self.toggle_truncation = function(orig){
+		var copy = orig.slice(0);
+		copy.no_truncate = ! orig.no_truncate;
+		self.history.replace(orig, copy);
+	};
+	
+	self.clear = function(){
+		self.history([]);
+	};
 }
 
 function FishModel() {
 	var self = this;
 	self.funcs = ko.observable(new FishFunctionsModel());
 	self.vars = ko.observable(new FishVariablesModel());
+	self.history = ko.observable(new FishHistoryModel());
 	self.selected_model = ko.observable('');
 	
 	self.clear = function(){
 		self.funcs().clear();
 		self.vars().clear();
+		self.history().clear();
 	}
 	
 	self.select_model = function(which){
