@@ -162,12 +162,15 @@ function switch_tab(new_tab) {
 	} else if (new_tab == 'tab_functions') {
 		submodel = gModel.funcs();
 	} else if (new_tab == 'tab_variables') {
+		submodel = gModel.vars();
 	} else if (new_tab == 'tab_history') {
 	} else {
 		alert("Unknown tab");
 	}
 	
 	if (submodel) {
+		gModel.clear();
+		gModel.select_model(submodel.name)
 		submodel.load();
 	}
 	
@@ -1016,8 +1019,9 @@ function FishConfigModel() {
 function FishFunctionsModel() {
 	var self = this;
 	
+	self.name = 'functions';
 	self.functions = ko.observableArray();
-	self.selected_function_name = ko.observable('efgh');
+	self.selected_function_name = ko.observable('');
 	self.function_text = ko.observable('');
 	
 	self.select_function = function(func_obj){
@@ -1046,23 +1050,56 @@ function FishFunctionsModel() {
 	};
 	
 	self.clear = function(){
-		return;
 		self.functions([]);
 		self.selected_function_name('');
 		self.function_text('');
 	};
 }
 
+function FishVariablesModel() {
+	var self = this;
+	self.name = 'variables';
+	
+	self.variables = ko.observableArray();
+
+	self.load = function(){
+		run_get_request_with_bulk_handler('/variables/', function(json_contents){
+			console.log(json_contents);
+			var i;
+			for (i=0; i < json_contents.length; i++)
+			{
+				json_contents[i].index = i;
+				json_contents[i].truncate = true;
+			}
+			self.variables(json_contents);
+		});
+	};
+	
+	self.toggle_truncation = function(orig){
+		var copy = orig.slice(0);
+		copy.truncate = ! orig.truncate;
+		self.variables.replace(orig, copy);
+	};
+	
+	self.clear = function(){
+		self.variables([]);
+	};
+
+}
+
 function FishModel() {
 	var self = this;
 	self.funcs = ko.observable(new FishFunctionsModel());
+	self.vars = ko.observable(new FishVariablesModel());
+	self.selected_model = ko.observable('');
 	
 	self.clear = function(){
 		self.funcs().clear();
+		self.vars().clear();
 	}
 	
-	self.foobar = function(qqq){
-		console.log("qqq")
+	self.select_model = function(which){
+		self.selected_model(which);
 	}
 }
 

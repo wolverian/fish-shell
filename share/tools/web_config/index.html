@@ -65,7 +65,7 @@
 			</div>
 		</div>
 -->
-	<div class="master_detail_table">
+	<div class="master_detail_table" data-bind="visible: selected_model() == 'functions'">
 		<!-- ko with: funcs -->
 		<div class="master" data-bind="foreach: functions">
 			<div class="master_element" data-bind="
@@ -81,7 +81,17 @@
 			</div>
 		</div>
 		<!-- /ko -->
-    </div>
+	</div>
+    
+	<!-- ko with: vars -->
+	<table id="data_table" data-bind="foreach: variables">
+		<tr class="data_table_row">
+			<td class="data_table_cell no_overflow" style="text-align: right; padding-right: 30px;" data-bind="text: $data[0]"></td>
+			<td class="data_table_cell" style="text-align: left; padding-right: 30px;" data-bind="text: $data[1], click: $parent.toggle_truncation, css: { 'no_overflow': $data.truncate }"></td>
+		</tr>
+	</table>
+	<!-- /ko -->
+
 
 </div>
 
