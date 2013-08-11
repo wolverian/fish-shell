@@ -84,22 +84,26 @@
 	</div>
     
 	<!-- ko with: vars -->
-	<table id="data_table" data-bind="foreach: variables">
-		<tr class="data_table_row">
-			<td class="data_table_cell no_overflow" style="text-align: right; padding-right: 30px;" data-bind="text: $data[0]"></td>
-			<td class="data_table_cell" style="text-align: left; padding-right: 30px;" data-bind="text: $data[1], click: $parent.toggle_truncation, css: { 'no_overflow': ! $data.no_truncate }"></td>
-		</tr>
+	<table id="data_table">
+		<tbody data-bind="foreach: variables">
+			<tr class="data_table_row">
+				<td class="data_table_cell no_overflow" style="text-align: right; padding-right: 30px;" data-bind="text: $data[0]"></td>
+				<td class="data_table_cell" style="text-align: left; padding-right: 30px;" data-bind="text: $data[1], click: $parent.toggle_truncation, css: { 'no_overflow': ! $data.no_truncate }"></td>
+			</tr>
+		</tbody>
 	</table>
 	<!-- /ko -->
 
 	<!-- ko with: history -->
-	<table id="data_table" data-bind="foreach: history">
-		<tr class="data_table_row">
-			<td class="data_table_cell" style="text-align: left; padding-right: 30px;" data-bind="text: $data[0], click: $parent.toggle_truncation, css: { 'no_overflow': ! $data.no_truncate }"></td>
-			<td class="data_table_cell" style="text-align: right; width: 25px" data-bind="click: $parent.delete"><img class="delete_icon" src="delete.png"></td>
-			<!--<td class="data_table_cell" style="text-align: right; width: 25px; color: red;" data-bind="click: $parent.delete">&#x24E7;</td>-->
-			</td>
-		</tr>
+	<table id="data_table">
+		<tbody data-bind="foreach: history">
+			<tr class="history_row">
+				<td style="text-align: left; padding-right: 30px;" data-bind="text: $data[0], click: $parent.toggle_truncation, css: { 'no_overflow': ! $data.no_truncate }"></td>
+				<td style="text-align: right; width: 25px" data-bind="click: $parent.delete"><img class="delete_icon" src="delete.png"></td>
+				<!--<td class="data_table_cell" style="text-align: right; width: 25px; color: red;" data-bind="click: $parent.delete">&#x24E7;</td>-->
+				</td>
+			</tr>
+		</tbody>
 	</table>
 	<!-- /ko -->
 
