@@ -196,7 +196,7 @@ body {
 	background-color: #444;
 }
 
-#data_table {
+.data_table {
 	table-layout:fixed;
 	color: #CCC;
 	width: 100%;
@@ -216,13 +216,18 @@ body {
 	word-wrap: break-word;
 }
 
-.history_row td {
+.history_text {
 	padding-top: 5px;
 	padding-bottom: 5px;
 	vertical-align: top;
 	overflow:hidden;
 	border-bottom: #444 dotted 1px;
 	word-wrap: break-word;	
+}
+
+.history_delete {
+	width: 20px;
+	border-bottom: #444 dotted 1px;
 }
 
 /* The CSS we apply when a table row is filtered */
@@ -298,10 +303,6 @@ img.delete_icon {
 	text-align: right;
 	position: relative;
 	bottom: 10px;
-}
-
-#table_filter_text_box {
-	
 }
 
 .filter_text_box {

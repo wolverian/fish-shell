@@ -171,7 +171,7 @@ function switch_tab(new_tab) {
 	
 	if (submodel) {
 		gModel.clear();
-		gModel.select_model(submodel.name)
+		gModel.select_model_name(submodel.name)
 		submodel.load();
 	}
 	
@@ -987,7 +987,7 @@ function update_table_filter_text_box(allow_transient_message) {
 	return true
 }
 
-$(document).ready(function() {
+if (0) $(document).ready(function() {
 	populate_colorpicker_term256()
 	var tab_name
 	switch (window.location.hash) {
@@ -1017,6 +1017,7 @@ function FishConfigModel() {
 	self.selectTab = function(tab) { location.hash = folder };
 }
 
+
 function FishFunctionsModel() {
 	var self = this;
 	
@@ -1039,13 +1040,10 @@ function FishFunctionsModel() {
 			var munged_contents = cleanup_fish_function(contents)
 			self.function_text(munged_contents)
 		});
-
-
 	};
 	
 	self.load = function(){
 		run_get_request_with_bulk_handler('/functions/', function(json_contents){
-			console.log(json_contents)
 			self.functions(json_contents);
 			
 			/* Select the first function if we don't have one selected already */
@@ -1071,20 +1069,16 @@ function FishVariablesModel() {
 
 	self.load = function(){
 		run_get_request_with_bulk_handler('/variables/', function(json_contents){
-			console.log(json_contents);
 			var i;
 			for (i=0; i < json_contents.length; i++)
 			{
 				json_contents[i].index = i;
-				
-				// Initially we truncate. Don't bother to store it since usually it won't be set.
-				//json_contents[i].no_truncate = false;
 			}
 			self.variables(json_contents);
 		});
 	};
 	
-	/* Toggle whether the variable is truncated. The value is not observable so we have to replace it. */
+	/* Toggle whether the variable is truncated. The value is not observable so we have to replace it. It's initially undefined. */
 	self.toggle_truncation = function(orig){
 		var copy = orig.slice(0);
 		copy.no_truncate = ! orig.no_truncate;
@@ -1096,18 +1090,113 @@ function FishVariablesModel() {
 	};
 }
 
+function FishHistoryFilterModel() {
+	var self = this;
+	self.text = ko.observable('');
+	self.is_transient = ko.observable(false);
+	self.focused = ko.observable(false);
+	
+	self.update_box_transient_state = function(box){
+		if (! self.focused() && self.text().length == 0)
+		{
+			self.is_transient(true);
+			self.text('Filter');
+		}
+		else if (self.is_transient())
+		{
+			self.is_transient(false);
+			self.text('');
+		}
+		return false;
+		var box = $('#table_filter_text_box')
+		var has_transient = box.hasClass('text_box_transient')
+		if (! allow_transient_message && has_transient) {
+			box.val('')
+			box.removeClass('text_box_transient')
+			has_transient = false
+		} else if (allow_transient_message && ! has_transient && ! box.val().length) {
+			box.val('Filter')
+			box.addClass('text_box_transient')
+			has_transient = true
+		}
+		
+		var search_text = box.val()
+		if (has_transient || search_text.length == 0) {
+			/* Unfilter all */
+			$('.data_table_row_filtered').removeClass('data_table_row_filtered')
+		} else {
+			/* Helper function to return whether a node (or its descendants) matches the given text */
+			function match_text(node) {
+				if (node.nodeType == 3) {
+					return node.nodeValue.indexOf(search_text) != -1
+				} else {
+					for (var i = 0, len = node.childNodes.length; i < len; ++i) {
+						if (match_text(node.childNodes[i])) {
+							return true;
+						}
+					}
+				}
+				return false
+			}
+		
+			$('.data_table_row').each(function(idx) {
+				var row = $(this)
+				var is_hidden = row.hasClass('data_table_row_filtered')
+				var should_be_hidden = ! match_text(this)
+				if (is_hidden && ! should_be_hidden) {
+					row.removeClass('data_table_row_filtered')
+				} else if (! is_hidden && should_be_hidden) {
+					row.addClass('data_table_row_filtered')
+				}
+			})
+		}
+		
+		return true
+	}
+	
+	self.load = function(){
+		self.text('Filter');
+		self.is_transient(true);
+	}
+	
+	self.filter_text = function(){
+		return self.is_transient() ? '' : self.text();
+	}
+}
+
+/* returns whether two arrays contain equal objects */
+function equal_arrays(a, b) {
+	if (a === b) return true;
+	var a_len = a.length;
+	if (a_len != b.length) return false;
+	for (var i=0; i < a_len; i++) {
+		if (a[i] !== b[i]) return false;
+	}
+	return true;
+}
+
 function FishHistoryModel() {
 	var self = this;
 	self.name = 'history';
+	self.loading_text = ko.observable('');
 	
+	self.history_filter = ko.observable(new FishHistoryFilterModel())
+	
+	self.remaining_to_load = new Array();
+	self.loaded_history = new Array();
 	self.history = ko.observableArray();
 	
+	/* Whether the user has typed something and we are coalescing updates */
+	self.text_field_coalescing = false;
+	
 	self.load = function(){
+		self.history_filter().load()
+		self.loading_text('Loading…');
 		run_get_request_with_bulk_handler('/history/', function(json_contents){
 			//console.log(json_contents);
 			var start = new Date().getTime();
-			var i;
 			var history_objs = new Array();
+			var i;
 			for (i=0; i < json_contents.length; i++)
 			{
 				// We are given text; we store it as a one element array so that we can make a 'copy' easily for truncation
@@ -1115,21 +1204,92 @@ function FishHistoryModel() {
 				history_obj.identifier = i
 				history_objs.push(history_obj)				
 			}
-			self.history(history_objs);
-			var end = new Date().getTime();
-			console.log("time: "  + (end - start));
+			self.remaining_to_load = self.remaining_to_load.concat(history_objs);
+			self.load_some_history();
 		});
 	};
 	
-	/* Toggle whether the variable is truncated. The value is not observable so we have to replace it. */
+	self.update_filtered_history = function(){
+		var filtered_history;
+		var filter_txt = self.history_filter().filter_text();
+		if (! filter_txt) {
+			filtered_history = self.loaded_history;
+		} else {
+			filtered_history = ko.utils.arrayFilter(self.loaded_history, function(history_obj){
+				var txt = history_obj[0];
+				return txt.indexOf(filter_txt) >= 0;
+			});
+		}
+		/* It's surprising that knockout doesn't seem to do this comparison */
+		var current = self.history();
+		if (! equal_arrays(current, filtered_history)) {
+			self.history(filtered_history);
+		}
+	}
+	
+	self.load_some_history = function(){
+		/* Clear if we're done loading */
+		if (self.remaining_to_load.length == 0) {
+			self.loading_text('');
+			return;
+		}
+			
+		/* Always take from the beginning */
+		var amount_to_take = Math.min(100, self.remaining_to_load.length);
+		var to_load = self.remaining_to_load.splice(0, amount_to_take);
+		for (var i=0; i < amount_to_take; i++) {
+			self.loaded_history.push(to_load[i]);
+		}
+		self.update_filtered_history();
+		
+		/* Trigger a timer if we aren't done */
+		var so_far = self.loaded_history.length, total = self.loaded_history.length + self.remaining_to_load.length;
+		self.loading_text('Loaded ' + so_far + ' / ' + total);
+		window.setTimeout(self.load_some_history, .1 * 1000.); //10 times a second
+	};
+	
+	/* Toggle whether the history item is truncated. The value is not observable so we have to replace it. */
 	self.toggle_truncation = function(orig){
 		var copy = orig.slice(0);
 		copy.no_truncate = ! orig.no_truncate;
 		self.history.replace(orig, copy);
 	};
 	
+	self.delete_history_item = function(orig){
+		var txt = orig[0];
+		run_post_request('/delete_history_item/', {
+			what: txt
+		}, function(contents){
+			if (contents == "OK") {
+				self.history.remove(orig);
+			} else {
+				show_error(contents)
+			}
+		});
+	};
+	
 	self.clear = function(){
 		self.history([]);
+	};
+	
+	// Triggered after the text field coalescing timer fires
+	self.do_coalesced_text_field_updates = function(){
+		self.update_filtered_history();
+		self.text_field_coalescing = false;
+	}
+		
+	self.update_box_filter = function(data, event){
+		/* knockout doesn't do a good job of updating on all text changes, so apply the text value immediately, then update our filter */
+		var text_field = event.target;
+		self.history_filter().text(text_field.value)
+		
+		if (self.text_field_coalescing) {
+			/* We are coalescing, reschedule */
+			window.clearTimeout(self.text_field_coalescing)
+		}
+		// Coalesce updates for .25 seconds
+		self.text_field_coalescing = window.setTimeout(self.do_coalesced_text_field_updates, 1000 * .25);
+
 	};
 }
 
@@ -1138,7 +1298,7 @@ function FishModel() {
 	self.funcs = ko.observable(new FishFunctionsModel());
 	self.vars = ko.observable(new FishVariablesModel());
 	self.history = ko.observable(new FishHistoryModel());
-	self.selected_model = ko.observable('');
+	self.selected_model_name = ko.observable('');
 	
 	self.clear = function(){
 		self.funcs().clear();
@@ -1146,8 +1306,8 @@ function FishModel() {
 		self.history().clear();
 	}
 	
-	self.select_model = function(which){
-		self.selected_model(which);
+	self.select_model_name = function(which){
+		self.selected_model_name(which);
 	}
 }
 

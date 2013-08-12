@@ -14,11 +14,11 @@
     <div id="parent">
 
         <div id="tab_parent">
-			<div class="tab selected_tab" id="tab_colors" onClick="switch_tab('tab_colors')">colors</div>
-			<div class="tab" id="tab_prompt" onClick="switch_tab('tab_prompt')">prompt</div>
-			<div class="tab" id="tab_functions" onClick="switch_tab('tab_functions')">functions</div>
-			<div class="tab" id="tab_variables" onClick="switch_tab('tab_variables')">variables</div>
-			<div class="tab" id="tab_history" onClick="switch_tab('tab_history')">history</div>
+			<div class="tab" id="tab_colors" onClick="switch_tab('tab_colors')" data-bind="css: {selected_tab: selected_model_name()=='colors'}">colors</div>
+			<div class="tab" id="tab_prompt" onClick="switch_tab('tab_prompt')" data-bind="css: {selected_tab: selected_model_name()=='prompt'}">prompt</div>
+			<div class="tab" id="tab_functions" onClick="switch_tab('tab_functions')" data-bind="css: {selected_tab: selected_model_name()=='functions'}">functions</div>
+			<div class="tab" id="tab_variables" onClick="switch_tab('tab_variables')" data-bind="css: {selected_tab: selected_model_name()=='variables'}">variables</div>
+			<div class="tab" id="tab_history" onClick="switch_tab('tab_history')" data-bind="css: {selected_tab: selected_model_name()=='history'}">history</div>
         </div>
         <div id="tab_contents">
 <!--
@@ -65,7 +65,7 @@
 			</div>
 		</div>
 -->
-	<div class="master_detail_table" data-bind="visible: selected_model() == 'functions'">
+	<div class="master_detail_table" data-bind="visible: selected_model_name() == 'functions'">
 		<!-- ko with: funcs -->
 		<div class="master" data-bind="foreach: functions">
 			<div class="master_element" data-bind="
@@ -83,29 +83,42 @@
 		<!-- /ko -->
 	</div>
     
+	<table class="data_table" data-bind="visible: selected_model_name() == 'variables'">
 	<!-- ko with: vars -->
-	<table id="data_table">
 		<tbody data-bind="foreach: variables">
 			<tr class="data_table_row">
 				<td class="data_table_cell no_overflow" style="text-align: right; padding-right: 30px;" data-bind="text: $data[0]"></td>
 				<td class="data_table_cell" style="text-align: left; padding-right: 30px;" data-bind="text: $data[1], click: $parent.toggle_truncation, css: { 'no_overflow': ! $data.no_truncate }"></td>
 			</tr>
 		</tbody>
-	</table>
 	<!-- /ko -->
+	</table>
 
-	<!-- ko with: history -->
-	<table id="data_table">
-		<tbody data-bind="foreach: history">
-			<tr class="history_row">
-				<td style="text-align: left; padding-right: 30px;" data-bind="text: $data[0], click: $parent.toggle_truncation, css: { 'no_overflow': ! $data.no_truncate }"></td>
-				<td style="text-align: right; width: 25px" data-bind="click: $parent.delete"><img class="delete_icon" src="delete.png"></td>
-				<!--<td class="data_table_cell" style="text-align: right; width: 25px; color: red;" data-bind="click: $parent.delete">&#x24E7;</td>-->
-				</td>
-			</tr>
-		</tbody>
-	</table>
-	<!-- /ko -->
+	<div data-bind="visible: selected_model_name() == 'history'">
+		<!-- ko with: history -->
+		<div id="table_filter_container">
+			<span data-bind="text: loading_text, visible: loading_text().length">(Loading)</span>
+			<!-- ko with: history_filter -->
+			<input type="text"
+			       class="filter_text_box"
+				   data-bind="value: text,
+				  			  hasFocus: focused,
+				  			  event: { input: $parent.update_box_filter, focus: update_box_transient_state, blur: update_box_transient_state },
+				  			  css: { 'text_box_transient': is_transient() }
+			                  ">
+			<!-- /ko -->
+		</div>
+		<table class="data_table">
+			<tbody data-bind="foreach: history">
+				<tr>
+					<td class="history_text" data-bind="text: $data[0], click: $parent.toggle_truncation, css: { 'no_overflow': ! $data.no_truncate }"></td>
+					<td class="history_delete" data-bind="click: $parent.delete_history_item"><img class="delete_icon" src="delete.png"></td>
+					</td>
+				</tr>
+			</tbody>
+		</table>
+		<!-- /ko -->
+	</div>
 
 </div>
 
