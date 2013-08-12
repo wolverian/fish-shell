@@ -145,6 +145,18 @@ function master_color_for_color(color_str) {
 	})
 }
 
+/* Given a color, compute a "border color" for it that can show it selected */
+function border_color_for_color(color_str) {
+	return adjust_lightness(color_str, function(lightness){
+		var adjust = .5
+		var new_lightness = lightness + adjust
+		if (new_lightness > 1.0 || new_lightness < 0.0) {
+			new_lightness -= 2 * adjust
+		}
+		return new_lightness
+	})
+}
+
 /* Update prompt_demo_text with the given text, adjusting the font */
 function set_prompt_demo_text(txt, font_size) {
 	/* Set the font size and the text */
@@ -1296,7 +1308,7 @@ function FishHistoryModel() {
 
 /* Class representing a style */
 function Style(stuff) {
-	this.color = interpret_color(stuff[0])
+	this.foreground_color = interpret_color(stuff[0])
 	this.background_color = interpret_color(stuff[1])
 	this.bold = stuff[2]
 	this.underline = stuff[3]
@@ -1311,8 +1323,20 @@ function FishColorSettingModel(name, style, description) {
 	self.name = name;
 	self.description = description;
 	
+	self.set_color = function(color_str, target){
+		var style = self.style();
+		if (target == 'foreground') {
+			style.foreground_color = color_str;
+		} else if (target == 'background') {
+			style.background_color = color_str;
+		}
+		/* This is dubious - setting the style to the same value. knockout might optimize this to check for equality and conclude it hasn't changed. But it seems to work. */
+		self.style(style);
+	}
+	
+	/* The color of our label, a bit lighter than our color */
 	self.label_color = ko.computed(function(){
-		return adjust_lightness(self.style().color, function(lightness){
+		return adjust_lightness(self.style().foreground_color, function(lightness){
 			if (lightness < .33) {
 				lightness = .33;
 			}
@@ -1327,6 +1351,9 @@ function FishColorPickerModel() {
 	self.name = 'color_picker';
 	self.color_arrays_array = new Array();
 	self.selected_setting = ko.observable(false);
+	
+	/* 'foreground' or 'background' */
+	self.selected_target = ko.observable('foreground');
 	
 	/* Our colors are not observable; just populate the array */
 	var items_per_row = 15;
@@ -1364,7 +1391,39 @@ function FishColorPickerModel() {
 	self.select_setting = function(to_select){
 		self.selected_setting(to_select);
 	}
-
+	
+	self.select_color = function(color_str){
+		var setting = self.selected_setting();
+		if (setting) {
+			setting.set_color(color_str, self.selected_target());
+			
+			var style = setting.style();
+			if (style) {
+				run_post_request('/set_color/', {
+					what: setting.name,
+					color: style.foreground_color,
+					background_color: style.background_color,
+					bold: style.bold,
+					underline: style.underline
+				}, function(contents){
+					
+				})
+			}
+		}
+	};
+	
+	/* The selected color */
+	self.selected_color = ko.computed(function(){
+		var setting = self.selected_setting();
+		if (! setting) return false;
+		
+		var style = setting.style();
+		if (self.selected_target() == 'foreground') {
+			return style.foreground_color;
+		} else {
+			return style.background_color;
+		}
+	});
 }
 
 function FishModel() {

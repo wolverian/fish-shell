@@ -137,7 +137,11 @@
 				<table id="colorpicker_term256">
 					<tbody data-bind="foreach: color_arrays_array">
 						<tr class="colorpicker_term256_row" data-bind="foreach: $data">
-							<td class="colorpicker_term256_cell" data-bind="style: {'backgroundColor': '#' + $data, 'color': '#' + $data}"></td>
+							<td class="colorpicker_term256_cell"
+							    data-bind="style: {'backgroundColor': '#' + $data, 'color': '#' + $data, 'border-color': '#' + border_color_for_color($data) },
+							               css: { 'colorpicker_cell_selected': $data == $parents[1].selected_color()},
+							               click: $parents[1].select_color">
+							    </td>
 						</tr>
 					</tbody>
 					<!-- /ko -->
