@@ -158,6 +158,7 @@ function switch_tab(new_tab) {
 	
 	var submodel = false;
 	if (new_tab == 'tab_colors') {
+		submodel = gModel.color_picker();
 	} else if (new_tab == 'tab_prompt') {
 	} else if (new_tab == 'tab_functions') {
 		submodel = gModel.funcs();
@@ -1293,17 +1294,94 @@ function FishHistoryModel() {
 	};
 }
 
+/* Class representing a style */
+function Style(stuff) {
+	this.color = interpret_color(stuff[0])
+	this.background_color = interpret_color(stuff[1])
+	this.bold = stuff[2]
+	this.underline = stuff[3]
+}
+
+/* An object representing a single setting, i.e. 'command' = 'red' */
+function FishColorSettingModel(name, style, description) {
+	var self = this;
+	self.style = ko.observable(style);
+	
+	/* Name and description are immutable */
+	self.name = name;
+	self.description = description;
+	
+	self.label_color = ko.computed(function(){
+		return adjust_lightness(self.style().color, function(lightness){
+			if (lightness < .33) {
+				lightness = .33;
+			}
+			return lightness;
+		})
+	});
+	
+};
+
+function FishColorPickerModel() {
+	var self = this;
+	self.name = 'color_picker';
+	self.color_arrays_array = new Array();
+	self.selected_setting = ko.observable(false);
+	
+	/* Our colors are not observable; just populate the array */
+	var items_per_row = 15;
+	for (var idx = 0; idx < term256_colors.length; idx += items_per_row) {
+		var row = new Array();
+		for (var subidx = 0; subidx < items_per_row && idx  + subidx < term256_colors.length; subidx++) {
+			row.push(term256_colors[idx + subidx]);
+		}
+		self.color_arrays_array.push(row);
+	}
+	
+	/* Array of FishColorSettingModel */
+	self.color_settings = ko.observableArray([]);
+	
+	self.load = function(){
+		run_get_request_with_bulk_handler('/colors/', function(json_contents){
+			var settings = new Array();
+			for (var i=0; i < json_contents.length; i++) {
+				/* Result is name, description, value */
+				var key_and_values = json_contents[i];
+				var key = key_and_values[0]
+				var description = key_and_values[1]
+				var style = new Style(key_and_values[2])
+				settings.push(new FishColorSettingModel(key, style, description));
+			}
+			self.color_settings(settings);
+		})
+	};
+
+	
+	self.clear = function(){
+		self.color_settings([]);
+	};
+	
+	self.select_setting = function(to_select){
+		self.selected_setting(to_select);
+	}
+
+}
+
 function FishModel() {
 	var self = this;
+	
 	self.funcs = ko.observable(new FishFunctionsModel());
 	self.vars = ko.observable(new FishVariablesModel());
 	self.history = ko.observable(new FishHistoryModel());
+	self.color_picker = ko.observable(new FishColorPickerModel());
+	
 	self.selected_model_name = ko.observable('');
 	
 	self.clear = function(){
 		self.funcs().clear();
 		self.vars().clear();
 		self.history().clear();
+		self.color_picker().clear();
 	}
 	
 	self.select_model_name = function(which){

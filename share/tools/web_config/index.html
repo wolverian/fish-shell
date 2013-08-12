@@ -119,6 +119,34 @@
 		</table>
 		<!-- /ko -->
 	</div>
+	
+	<!----- Color Picker ----->
+	
+	<div data-bind="visible: selected_model_name() == 'color_picker'">
+		<div class="master_detail_table">
+			<!-- ko with: color_picker -->
+			<div class="master" data-bind="foreach: color_settings">
+				<div class="master_element"
+	                 data-bind="text: name,
+	                            style: {color: label_color},
+	                            click: $parent.select_setting,
+	                            css: {selected_master_elem: $parent.selected_setting() == $data}
+	                            "></div>
+			</div>
+			<div class="detail">
+				<table id="colorpicker_term256">
+					<tbody data-bind="foreach: color_arrays_array">
+						<tr class="colorpicker_term256_row" data-bind="foreach: $data">
+							<td class="colorpicker_term256_cell" data-bind="style: {'backgroundColor': '#' + $data, 'color': '#' + $data}"></td>
+						</tr>
+					</tbody>
+					<!-- /ko -->
+				</table>
+			</div>
+			<!-- /ko -->
+		</div>
+	</div>
+
 
 </div>
 
