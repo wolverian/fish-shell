@@ -281,6 +281,33 @@ body {
 	 height: 23;
 }
 
+.colorpicker_text_sample {
+	font-size: 12pt;
+	padding: 25px;
+	margin: 5px 20px 25px 20px; /* top right bottom left */
+	cursor: pointer;
+	line-height: 1.8em;
+	border: solid #777 1px;
+	position: relative; /* so that our absolutely positioned elements work */
+}
+
+.color_picker_background_cells {
+	position: absolute;
+	right: 0px;
+	top: 0px;
+}
+
+.color_picker_background_cells div {
+	width: 14px;
+	height: 14px;
+	border: solid #777 1px;
+	float: left;
+}
+
+.fake_cursor {
+	background-color: #999;
+}
+
 .error_msg {
 	color: red;
 	font-size: 12pt;

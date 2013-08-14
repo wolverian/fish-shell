@@ -14,7 +14,7 @@
     <div id="parent">
 
         <div id="tab_parent">
-			<div class="tab" id="tab_colors" onClick="switch_tab('tab_colors')" data-bind="css: {selected_tab: selected_model_name()=='colors'}">colors</div>
+			<div class="tab" id="tab_colors" onClick="switch_tab('tab_colors')" data-bind="css: {selected_tab: selected_model_name()=='color_picker'}">colors</div>
 			<div class="tab" id="tab_prompt" onClick="switch_tab('tab_prompt')" data-bind="css: {selected_tab: selected_model_name()=='prompt'}">prompt</div>
 			<div class="tab" id="tab_functions" onClick="switch_tab('tab_functions')" data-bind="css: {selected_tab: selected_model_name()=='functions'}">functions</div>
 			<div class="tab" id="tab_variables" onClick="switch_tab('tab_variables')" data-bind="css: {selected_tab: selected_model_name()=='variables'}">variables</div>
@@ -123,8 +123,29 @@
 	<!----- Color Picker ----->
 	
 	<div data-bind="visible: selected_model_name() == 'color_picker'">
+		<!-- ko with: color_picker -->
+		<span style="padding-left: 25px">Click to customize each color:</span>
+		<div class="colorpicker_text_sample" data-bind="style: {backgroundColor: selected_sample_text_background_color}">
+			<div class="color_picker_background_cells" data-bind="foreach: sample_text_background_colors">
+				<div data-bind="style: { 'backgroundColor': $data}, click: $parent.selected_sample_text_background_color"></div>
+			</div>
+
+			<span data-bind="style: { 'color': $data.fg_color('command')}, click: $data.select_setting_name.bind($data, 'command')">/five/jumping</span>
+			<span data-bind="style: { 'color': $data.fg_color('param')}, click: $data.select_setting_name.bind($data, 'param')">wizards</span>
+			<span data-bind="style: { 'color': $data.fg_color('end')}, click: $data.select_setting_name.bind($data, 'end')">|</span>
+			<span data-bind="style: { 'color': $data.fg_color('command')}, click: $data.select_setting_name.bind($data, 'command')">hex</span>
+			<span data-bind="style: { 'color': $data.fg_color('quote')}, click: $data.select_setting_name.bind($data, 'quote')"> "bolty" </span>
+			<span data-bind="style: { 'color': $data.fg_color('redirection')}, click: $data.select_setting_name.bind($data, 'redirection')">&gt; quick</span>
+			<span data-bind="style: { 'color': $data.fg_color('end')}, click: $data.select_setting_name.bind($data, 'end')">&</span>
+			<br>
+			<span data-bind="style: { 'color': $data.fg_color('command')}, click: $data.select_setting_name.bind($data, 'command')">echo</span>
+			<span data-bind="style: { 'color': $data.fg_color('error')}, click: $data.select_setting_name.bind($data, 'error')">'Errors are the portals to discovery</span>
+			<br>
+			<span data-bind="style: { 'color': $data.fg_color('comment')}, click: $data.select_setting_name.bind($data, 'comment')"># This is a comment</span>
+			<br>
+			<span data-bind="style: { 'color': $data.fg_color('command')}, click: $data.select_setting_name.bind($data, 'command')">Th</span><span data-bind="style: { 'color': $data.fg_color('autosuggestion')}, click: $data.select_setting_name.bind($data, 'autosuggestion')"><span class="fake_cursor"><span style="visibility: hidden">i</span></span>s is an autosuggestion</span>
+		</div>
 		<div class="master_detail_table">
-			<!-- ko with: color_picker -->
 			<div class="master" data-bind="foreach: color_settings">
 				<div class="master_element"
 	                 data-bind="text: name,
@@ -139,7 +160,7 @@
 						<tr class="colorpicker_term256_row" data-bind="foreach: $data">
 							<td class="colorpicker_term256_cell"
 							    data-bind="style: {'backgroundColor': '#' + $data, 'color': '#' + $data, 'border-color': '#' + border_color_for_color($data) },
-							               css: { 'colorpicker_cell_selected': $data == $parents[1].selected_color()},
+							               css: { 'colorpicker_cell_selected': $data === $parents[1].selected_color()},
 							               click: $parents[1].select_color">
 							    </td>
 						</tr>
@@ -147,8 +168,8 @@
 					<!-- /ko -->
 				</table>
 			</div>
-			<!-- /ko -->
 		</div>
+		<!-- /ko -->
 	</div>
 
 

@@ -813,8 +813,19 @@ term256_colors = [ //247
 "ffffff",
 ]
 
-var items_per_row = 15
-var show_labels = 0
+/* Return the array of colors as an array of N arrays of length items_per_row */
+function get_colors_as_nested_array(items_per_row) {
+	var result = new Array();
+	for (var idx = 0; idx < term256_colors.length; idx += items_per_row) {
+		var row = new Array();
+		for (var subidx = 0; subidx < items_per_row && idx  + subidx < term256_colors.length; subidx++) {
+			row.push(term256_colors[idx + subidx]);
+		}
+		result.push(row);
+	}
+	return result;
+}
+
 
 var COLOR_NORMAL = 'CCC'
 
@@ -922,35 +933,6 @@ function create_data_table_element_text(contents_list, show_delete_button) {
 	return result_str
 }
 
-/* Put stuff in colorpicker_term256 */
-function populate_colorpicker_term256() {
-	$('#colorpicker_term256').empty()
-	var idx
-	for (idx = 0; idx < term256_colors.length; idx += items_per_row) {
-		var row = $('<tr>', {
-			class: 'colorpicker_term256_row'
-		})
-		
-		for (var subidx = 0; subidx < items_per_row && idx  + subidx < term256_colors.length; subidx++) {
-			cell_style = 'background-color: #' + term256_colors[idx + subidx]
-			var cell = $('<td>', {
-				class: 'colorpicker_term256_cell',
-				style: cell_style,
-				id: 'color_' + term256_colors[idx + subidx],
-				text: show_labels ? String(subidx + idx + 223) : '',
-				onClick: 'picked_color_cell(this)'
-			})
-			
-			/* For reasons I don't understand, this makes the selected cell border appear in Firefox */
-			cell.append($('<div>', {
-				style: 'width: 100%; height: 100%'
-			}))
-			row.append(cell)
-		}
-		
-		$('#colorpicker_term256').append(row)
-	}	
-}
 
 /* Update the filter text box */
 function update_table_filter_text_box(allow_transient_message) {
@@ -1001,7 +983,6 @@ function update_table_filter_text_box(allow_transient_message) {
 }
 
 if (0) $(document).ready(function() {
-	populate_colorpicker_term256()
 	var tab_name
 	switch (window.location.hash) {
 		case '#functions':
@@ -1342,28 +1323,26 @@ function FishColorSettingModel(name, style, description) {
 			}
 			return lightness;
 		})
-	});
-	
+	});	
 };
 
 function FishColorPickerModel() {
 	var self = this;
 	self.name = 'color_picker';
-	self.color_arrays_array = new Array();
 	self.selected_setting = ko.observable(false);
 	
 	/* 'foreground' or 'background' */
 	self.selected_target = ko.observable('foreground');
 	
 	/* Our colors are not observable; just populate the array */
-	var items_per_row = 15;
-	for (var idx = 0; idx < term256_colors.length; idx += items_per_row) {
-		var row = new Array();
-		for (var subidx = 0; subidx < items_per_row && idx  + subidx < term256_colors.length; subidx++) {
-			row.push(term256_colors[idx + subidx]);
-		}
-		self.color_arrays_array.push(row);
-	}
+	self.color_arrays_array = get_colors_as_nested_array(16);
+	
+	/* Colors for the "sample text" background */
+	self.sample_text_background_colors = ['white', '#DFDBC3', '#500', '#005', '#232323', 'black'];
+	
+	/* Which sample text background color is selected */
+	self.selected_sample_text_background_color = ko.observable('black');
+	
 	
 	/* Array of FishColorSettingModel */
 	self.color_settings = ko.observableArray([]);
@@ -1392,11 +1371,20 @@ function FishColorPickerModel() {
 		self.selected_setting(to_select);
 	}
 	
+	self.select_setting_name = function(which_setting_name){
+		console.log(which_setting_name);
+		var setting = ko.utils.arrayFirst(self.color_settings(), function(item) {
+			return item.name === which_setting_name;
+		});
+		if (setting) self.select_setting(setting);
+	}
+	
 	self.select_color = function(color_str){
 		var setting = self.selected_setting();
 		if (setting) {
 			setting.set_color(color_str, self.selected_target());
 			
+			/* Post the style to the server */
 			var style = setting.style();
 			if (style) {
 				run_post_request('/set_color/', {
@@ -1406,7 +1394,6 @@ function FishColorPickerModel() {
 					bold: style.bold,
 					underline: style.underline
 				}, function(contents){
-					
 				})
 			}
 		}
@@ -1424,6 +1411,20 @@ function FishColorPickerModel() {
 			return style.background_color;
 		}
 	});
+	
+	/* Return the foreground color for a given named setting
+	   See http://stackoverflow.com/questions/6706281/knockoutjs-can-we-create-a-dependentobservable-function-with-a-parameter for how this works
+	*/
+	self.fg_color = function(which_setting_name){
+		var result = '';
+		var setting = ko.utils.arrayFirst(self.color_settings(), function(item) {
+			return item.name === which_setting_name;
+		});
+		if (setting) {
+			result = setting.style().foreground_color;
+		}
+		return result;
+	};
 }
 
 function FishModel() {
@@ -1451,3 +1452,4 @@ function FishModel() {
 gModel = new FishModel();
 ko.applyBindings(gModel);
 
+switch_tab('tab_colors');
