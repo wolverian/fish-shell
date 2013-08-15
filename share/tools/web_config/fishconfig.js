@@ -814,12 +814,12 @@ term256_colors = [ //247
 ]
 
 /* Return the array of colors as an array of N arrays of length items_per_row */
-function get_colors_as_nested_array(items_per_row) {
+function get_colors_as_nested_array(colors, items_per_row) {
 	var result = new Array();
-	for (var idx = 0; idx < term256_colors.length; idx += items_per_row) {
+	for (var idx = 0; idx < colors.length; idx += items_per_row) {
 		var row = new Array();
-		for (var subidx = 0; subidx < items_per_row && idx  + subidx < term256_colors.length; subidx++) {
-			row.push(term256_colors[idx + subidx]);
+		for (var subidx = 0; subidx < items_per_row && idx  + subidx < colors.length; subidx++) {
+			row.push(colors[idx + subidx]);
 		}
 		result.push(row);
 	}
@@ -1326,6 +1326,49 @@ function FishColorSettingModel(name, style, description) {
 	});	
 };
 
+var solarized = {
+	base03: '002b36', base02: '073642', base01: '586e75', base00: '657b83', base0: '839496', base1: '93a1a1', base2: 'eee8d5', base3: 'fdf6e3', yellow: 'b58900', orange: 'cb4b16', red: 'dc322f', magenta: 'd33682', violet: '6c71c4', blue: '268bd2', cyan: '2aa198', green: '859900'
+};
+
+function solarized_colors() {
+	var result = new Array();
+	for (x in solarized) result.push(solarized[x]);
+	return result;
+}
+
+/* Sample color schemes */
+var color_scheme_solarized_light = {
+	"name": "solarized (light)",
+	"colors": solarized_colors(),
+	
+	'preferred_background': '#' + solarized.base3,
+	
+	'autosuggestion': solarized.base1,
+	'command': solarized.base01,
+	'comment': solarized.base1,
+	'end': solarized.blue,
+	'error': solarized.red,
+	'param': solarized.base00,
+	'quote': solarized.base0,
+	'redirection': solarized.violet
+};
+
+var color_scheme_solarized_dark = {
+	"name": "solarized (dark)",
+	"colors": solarized_colors(),
+	
+	'preferred_background': '#' + solarized.base03,
+	
+	'autosuggestion': solarized.base01,
+	'command': solarized.base1,
+	'comment': solarized.base01,
+	'end': solarized.blue,
+	'error': solarized.red,
+	'param': solarized.base0,
+	'quote': solarized.base00,
+	'redirection': solarized.violet
+};
+
 function FishColorPickerModel() {
 	var self = this;
 	self.name = 'color_picker';
@@ -1334,18 +1377,66 @@ function FishColorPickerModel() {
 	/* 'foreground' or 'background' */
 	self.selected_target = ko.observable('foreground');
 	
-	/* Our colors are not observable; just populate the array */
-	self.color_arrays_array = get_colors_as_nested_array(16);
+	/* Our colors. The array itself is never modified, but may be replaced. */
+	self.color_arrays_array = ko.observable(get_colors_as_nested_array(term256_colors, 16));
 	
 	/* Colors for the "sample text" background */
-	self.sample_text_background_colors = ['white', '#DFDBC3', '#500', '#005', '#232323', 'black'];
+	self.sample_text_background_colors = ['white', '#' + solarized.base3, '#300', '#003', '#' + solarized.base03, '#232323', 'black'];
 	
 	/* Which sample text background color is selected */
 	self.selected_sample_text_background_color = ko.observable('black');
 	
-	
 	/* Array of FishColorSettingModel */
 	self.color_settings = ko.observableArray([]);
+	
+	/* Array of FishColorSchemes */
+	self.color_schemes = [color_scheme_solarized_light, color_scheme_solarized_dark];
+	
+	/* The color scheme that is selected */
+	self.selected_color_scheme = ko.observable();
+	
+	var supported_setting_names = ['autosuggestion', 'command', 'comment', 'end', 'error', 'param', 'quote', 'redirection'];
+	
+	self.setting_code = ko.computed(function(){
+		var result = '';
+		var settings = self.color_settings();
+		for (var i=0; i < settings.length; i++) {
+			var setting = settings[i];
+			if (supported_setting_names.indexOf(setting.name) >= 0) {
+				result = result + setting.name + ' = ' + setting.style().foreground_color;
+				result = result + '\n';
+			}
+		}
+		return result;
+	});
+	
+	self.select_color_scheme = function(scheme){
+		console.log(scheme.name);
+		self.selected_color_scheme(scheme);
+		if (scheme.preferred_background) {
+			self.selected_sample_text_background_color(scheme.preferred_background);
+		}
+		
+		/* Set the color arrays */
+		self.color_arrays_array(get_colors_as_nested_array(scheme.colors, 24));
+		
+		/* Apply the colors */
+		var settings = self.color_settings();
+		for (var i=0; i < supported_setting_names.length; i++) {
+			var setting_name = supported_setting_names[i];
+			var color = scheme[setting_name];
+			if (color) {
+				/* Modify the appropriate setting */
+				for (var j=0; j < settings.length; j++) {
+					var setting = settings[j];
+					if (setting.name == setting_name) {
+						setting.set_color(color, 'foreground');
+						break;
+					}
+				}
+			}
+		}
+	};
 	
 	self.load = function(){
 		run_get_request_with_bulk_handler('/colors/', function(json_contents){
@@ -1361,22 +1452,17 @@ function FishColorPickerModel() {
 			self.color_settings(settings);
 		})
 	};
-
 	
 	self.clear = function(){
 		self.color_settings([]);
 	};
-	
-	self.select_setting = function(to_select){
-		self.selected_setting(to_select);
-	}
 	
 	self.select_setting_name = function(which_setting_name){
 		console.log(which_setting_name);
 		var setting = ko.utils.arrayFirst(self.color_settings(), function(item) {
 			return item.name === which_setting_name;
 		});
-		if (setting) self.select_setting(setting);
+		if (setting) self.selected_setting(setting);
 	}
 	
 	self.select_color = function(color_str){

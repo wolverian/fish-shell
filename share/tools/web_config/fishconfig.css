@@ -300,8 +300,15 @@ body {
 .color_picker_background_cells div {
 	width: 14px;
 	height: 14px;
-	border: solid #777 1px;
+	border-style: solid;
+	border-color: #777;
+	border-width: 0 0 1px 1px;  /* top right bottom left */
 	float: left;
+}
+
+.color_scheme_choice {
+	border: solid #777 1px;
+	cursor: pointer;
 }
 
 .fake_cursor {

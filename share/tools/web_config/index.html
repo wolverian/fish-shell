@@ -129,7 +129,7 @@
 			<div class="color_picker_background_cells" data-bind="foreach: sample_text_background_colors">
 				<div data-bind="style: { 'backgroundColor': $data}, click: $parent.selected_sample_text_background_color"></div>
 			</div>
-
+			<!-- This is the sample text -->
 			<span data-bind="style: { 'color': $data.fg_color('command')}, click: $data.select_setting_name.bind($data, 'command')">/five/jumping</span>
 			<span data-bind="style: { 'color': $data.fg_color('param')}, click: $data.select_setting_name.bind($data, 'param')">wizards</span>
 			<span data-bind="style: { 'color': $data.fg_color('end')}, click: $data.select_setting_name.bind($data, 'end')">|</span>
@@ -145,12 +145,31 @@
 			<br>
 			<span data-bind="style: { 'color': $data.fg_color('command')}, click: $data.select_setting_name.bind($data, 'command')">Th</span><span data-bind="style: { 'color': $data.fg_color('autosuggestion')}, click: $data.select_setting_name.bind($data, 'autosuggestion')"><span class="fake_cursor"><span style="visibility: hidden">i</span></span>s is an autosuggestion</span>
 		</div>
+		
+		<div data-bind="foreach: color_schemes">
+			<div class="color_scheme_choice" data-bind="text: name, click: $parent.select_color_scheme"></div>
+		</div>
+		
+		<table id="colorpicker_term256">
+			<tbody data-bind="foreach: color_arrays_array">
+				<tr class="colorpicker_term256_row" data-bind="foreach: $data">
+					<td class="colorpicker_term256_cell"
+						data-bind="style: {'backgroundColor': '#' + $data, 'color': '#' + $data, 'border-color': '#' + border_color_for_color($data) },
+								   css: { 'colorpicker_cell_selected': $data === $parents[1].selected_color()},
+								   click: $parents[1].select_color">
+						</td>
+				</tr>
+			</tbody>
+			<!-- /ko -->
+		</table>
+				
+		<div style="display: none">
 		<div class="master_detail_table">
 			<div class="master" data-bind="foreach: color_settings">
 				<div class="master_element"
 	                 data-bind="text: name,
 	                            style: {color: label_color},
-	                            click: $parent.select_setting,
+	                            click: $parent.selected_setting,
 	                            css: {selected_master_elem: $parent.selected_setting() == $data}
 	                            "></div>
 			</div>
@@ -168,6 +187,7 @@
 					<!-- /ko -->
 				</table>
 			</div>
+		</div>
 		</div>
 		<!-- /ko -->
 	</div>
