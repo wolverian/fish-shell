@@ -1369,6 +1369,23 @@ var color_scheme_solarized_dark = {
 	'redirection': solarized.violet
 };
 
+var color_scheme_fish_default = {
+	"name": "fish default",
+	"colors": [],
+	'preferred_background': 'black',
+	
+	'autosuggestion': '555',
+	'command': '005fd7',
+	'param': '00afff',
+	'redirection': '00afff',
+	'comment': '990000',
+	'error': 'ff0000',
+	'escape': '00a6b2',
+	'operator': '00a6b2',
+	'quote': '999900',
+	'end': '009900'
+};
+
 function FishColorPickerModel() {
 	var self = this;
 	self.name = 'color_picker';
@@ -1378,7 +1395,7 @@ function FishColorPickerModel() {
 	self.selected_target = ko.observable('foreground');
 	
 	/* Our colors. The array itself is never modified, but may be replaced. */
-	self.color_arrays_array = ko.observable(get_colors_as_nested_array(term256_colors, 16));
+	self.color_arrays_array = ko.observable(get_colors_as_nested_array(term256_colors, 32));
 	
 	/* Colors for the "sample text" background */
 	self.sample_text_background_colors = ['white', '#' + solarized.base3, '#300', '#003', '#' + solarized.base03, '#232323', 'black'];
@@ -1390,7 +1407,7 @@ function FishColorPickerModel() {
 	self.color_settings = ko.observableArray([]);
 	
 	/* Array of FishColorSchemes */
-	self.color_schemes = [color_scheme_solarized_light, color_scheme_solarized_dark];
+	self.color_schemes = [color_scheme_fish_default, color_scheme_solarized_light, color_scheme_solarized_dark];
 	
 	/* The color scheme that is selected */
 	self.selected_color_scheme = ko.observable();
@@ -1418,7 +1435,8 @@ function FishColorPickerModel() {
 		}
 		
 		/* Set the color arrays */
-		self.color_arrays_array(get_colors_as_nested_array(scheme.colors, 24));
+		var colors = scheme.colors ? scheme.colors : term256_colors;
+		self.color_arrays_array(get_colors_as_nested_array(colors, 24));
 		
 		/* Apply the colors */
 		var settings = self.color_settings();

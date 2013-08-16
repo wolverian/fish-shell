@@ -10,7 +10,7 @@
 <body>
 
 <div id="ancestor">
-    <span style="font-size: 30pt; color: #8888FF">fish</span><p id="global_error" class="error_msg"></p>
+    <span style="font-size: 16pt; color: #8888FF">fish</span><p id="global_error" class="error_msg"></p>
     <div id="parent">
 
         <div id="tab_parent">
@@ -146,22 +146,47 @@
 			<span data-bind="style: { 'color': $data.fg_color('command')}, click: $data.select_setting_name.bind($data, 'command')">Th</span><span data-bind="style: { 'color': $data.fg_color('autosuggestion')}, click: $data.select_setting_name.bind($data, 'autosuggestion')"><span class="fake_cursor"><span style="visibility: hidden">i</span></span>s is an autosuggestion</span>
 		</div>
 		
-		<div data-bind="foreach: color_schemes">
-			<div class="color_scheme_choice" data-bind="text: name, click: $parent.select_color_scheme"></div>
-		</div>
+		<!-- 						
+						data-bind="style: {'backgroundColor': '#' + $data, 'color': '#' + $data, 'border-color': 'black'},
+								   css: { 'colorpicker_cell_selected': $data === $parents[1].selected_color()},
+								   click: $parents[1].select_color">
+
+		 -->
 		
-		<table id="colorpicker_term256">
+		<table class="colorpicker_term256" style="margin: 0px 20px; display: none">
 			<tbody data-bind="foreach: color_arrays_array">
 				<tr class="colorpicker_term256_row" data-bind="foreach: $data">
 					<td class="colorpicker_term256_cell"
-						data-bind="style: {'backgroundColor': '#' + $data, 'color': '#' + $data, 'border-color': '#' + border_color_for_color($data) },
-								   css: { 'colorpicker_cell_selected': $data === $parents[1].selected_color()},
+						data-bind="style: {'backgroundColor': '#' + $data, 'color': '#' + $data, 'border-color': 'black'},
 								   click: $parents[1].select_color">
+							<div class="colorpicker_term256_selection_indicator" data-bind="visible: $data === $parents[1].selected_color(), style: {borderColor: border_color_for_color($data) }">hi</div>
 						</td>
 				</tr>
 			</tbody>
 			<!-- /ko -->
 		</table>
+		
+		<div data-bind="foreach: color_schemes">
+			<div style="float: left" data-bind="click: $parent.select_color_scheme">
+				<div class="color_scheme_choice" data-bind="text: name"></div>
+				<div class="colorpicker_text_sample_tight" data-bind="style: {backgroundColor: preferred_background}">
+					<span data-bind="style: { 'color': command}">/five/jumping</span>
+					<span data-bind="style: { 'color': param}">wizards</span>
+					<span data-bind="style: { 'color': end}">|</span>
+					<span data-bind="style: { 'color': command}">hex</span>
+					<span data-bind="style: { 'color': quote}"> "bolty" </span>
+					<span data-bind="style: { 'color': redirection}">&gt; quick</span>
+					<span data-bind="style: { 'color': end}">&</span>
+					<br>
+					<span data-bind="style: { 'color': command}">echo</span>
+					<span data-bind="style: { 'color': error}">'Errors are the portals to discovery</span>
+					<br>
+					<span data-bind="style: { 'color': comment}"># This is a comment</span>
+					<br>
+					<span data-bind="style: { 'color': command}">Th</span><span data-bind="style: { 'color': autosuggestion}"><span class="fake_cursor"><span style="visibility: hidden">i</span></span>s is an autosuggestion</span>
+				</div>
+			</div>
+		</div>
 				
 		<div style="display: none">
 		<div class="master_detail_table">
@@ -174,7 +199,7 @@
 	                            "></div>
 			</div>
 			<div class="detail">
-				<table id="colorpicker_term256">
+				<table class="colorpicker_term256">
 					<tbody data-bind="foreach: color_arrays_array">
 						<tr class="colorpicker_term256_row" data-bind="foreach: $data">
 							<td class="colorpicker_term256_cell"
