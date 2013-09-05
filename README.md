@@ -40,7 +40,7 @@ If fish reports that it could not find curses, try installing a curses developme
 
 On Debian or Ubuntu you want:
 
-	sudo apt-get install libncurses5-dev libncursesw5-dev
+    sudo apt-get install libncurses5-dev
 
 on RedHat, CentOS, or Amazon EC2:
 
@@ -66,6 +66,6 @@ Substitute /bin/bash with /bin/tcsh or /bin/zsh as appropriate.
 
 ## Contact Us
 
-Questions, comments, rants and raves can be posted to the official fish mailing list at <https://lists.sourceforge.net/lists/listinfo/fish-users> or join us on our IRC channel #fish at irc.oftc.net
+Questions, comments, rants and raves can be posted to the official fish mailing list at <https://lists.sourceforge.net/lists/listinfo/fish-users> or join us on our IRC channel [#fish at irc.oftc.net](https://webchat.oftc.net/?channels=fish).
 
 Found a bug? Have an awesome idea? Please open an issue on this github page.

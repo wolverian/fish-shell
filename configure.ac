@@ -1,4 +1,3 @@
-
 #
 # This file is the main build configuration file for fish. It is used
 # to determine your systems capabilities, and tries to adapt fish to
@@ -9,7 +8,11 @@
 # configure the build process.
 #
 
-AC_INIT(fish,2.0.0,fish-users@lists.sf.net)
+m4_syscmd([build_tools/git_version_gen.sh 2>/dev/null])
+
+AC_INIT(fish,
+        m4_esyscmd([cut -f 3 -d ' ' FISH-BUILD-VERSION-FILE | tr -d '\n']),
+        fish-users@lists.sf.net)
 
 conf_arg=$@
 
@@ -123,7 +126,7 @@ for i in /usr/pkg /sw /opt /opt/local /usr/local; do
   AC_MSG_CHECKING([for $i/lib library directory])
   if test -d $i/lib; then
     AC_MSG_RESULT(yes)
-    LDFLAGS="$LDFLAGS -L$i/lib/ -Wl,-rpath,$i/lib/"
+    LDFLAGS="$LDFLAGS -L$i/lib/"
   else
     AC_MSG_RESULT(no)
   fi
@@ -476,7 +479,7 @@ LIBS=""
 AC_SEARCH_LIBS( connect, socket, , [AC_MSG_ERROR([Cannot find the socket library, needed to build this package.] )] )
 AC_SEARCH_LIBS( nanosleep, rt, , [AC_MSG_ERROR([Cannot find the rt library, needed to build this package.] )] )
 AC_SEARCH_LIBS( pthread_create, pthread, , [AC_MSG_ERROR([Cannot find the pthread library, needed to build this package.] )] )
-AC_SEARCH_LIBS( setupterm, [ncurses curses], , [AC_MSG_ERROR([Could not find a curses implementation, needed to build fish])] )
+AC_SEARCH_LIBS( setupterm, [ncurses curses], , [AC_MSG_ERROR([Could not find a curses implementation, needed to build fish. If this is Linux, try running 'sudo apt-get install libncurses5-dev' or 'sudo yum install ncurses-devel'])] )
 AC_SEARCH_LIBS( [nan], [m], [AC_DEFINE( [HAVE_NAN], [1], [Define to 1 if you have the nan function])] )
 LIBS_SHARED=$LIBS
 LIBS=$LIBS_COMMON
