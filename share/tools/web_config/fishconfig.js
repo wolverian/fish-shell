@@ -116,6 +116,11 @@ function adjust_lightness(color_str, func) {
 	if (color_str.length == 3) {
 		color_str = color_str[0] + color_str[0] + color_str[1] + color_str[1] + color_str[2] + color_str[2]
 	}
+	
+	/* More hacks */
+	if (color_str == 'black') color_str = '000000';
+	if (color_str == 'white') color_str = 'FFFFFF';
+
 
 	rgb = parseInt(color_str, 16)
 	r = (rgb >> 16) & 0xFF
@@ -156,6 +161,19 @@ function border_color_for_color(color_str) {
 		return new_lightness
 	})
 }
+
+function text_color_for_color(color_str) {
+		/* Use this function to make a color that contrasts well with the given color */
+	var adjust = .5
+	function compute_constrast(lightness){
+		var new_lightness = lightness + adjust
+		if (new_lightness > 1.0 || new_lightness < 0.0) {
+			new_lightness -= 2 * adjust
+		}
+		return new_lightness
+	}
+	return adjust_lightness(color_str, compute_constrast);
+}		
 
 /* Update prompt_demo_text with the given text, adjusting the font */
 function set_prompt_demo_text(txt, font_size) {
@@ -1169,6 +1187,13 @@ function equal_arrays(a, b) {
 	return true;
 }
 
+/* Returns array of values from a dictionary (or any object) */
+function dict_values(dict) {
+	var result = [];
+	for (var i in dict) result.push(dict[i]);
+	return result;
+}
+
 function FishHistoryModel() {
 	var self = this;
 	self.name = 'history';
@@ -1217,7 +1242,8 @@ function FishHistoryModel() {
 		/* It's surprising that knockout doesn't seem to do this comparison */
 		var current = self.history();
 		if (! equal_arrays(current, filtered_history)) {
-			self.history(filtered_history);
+			/* Need to pass a copy of the array since knockout won't copy it */
+			self.history(filtered_history.slice(0));
 		}
 	}
 	
@@ -1263,6 +1289,8 @@ function FishHistoryModel() {
 	};
 	
 	self.clear = function(){
+		self.remaining_to_load = [];
+		self.loaded_history = [];
 		self.history([]);
 	};
 	
@@ -1326,48 +1354,6 @@ function FishColorSettingModel(name, style, description) {
 	});	
 };
 
-var solarized = {
-	base03: '002b36', base02: '073642', base01: '586e75', base00: '657b83', base0: '839496', base1: '93a1a1', base2: 'eee8d5', base3: 'fdf6e3', yellow: 'b58900', orange: 'cb4b16', red: 'dc322f', magenta: 'd33682', violet: '6c71c4', blue: '268bd2', cyan: '2aa198', green: '859900'
-};
-
-function solarized_colors() {
-	var result = new Array();
-	for (x in solarized) result.push(solarized[x]);
-	return result;
-}
-
-/* Sample color schemes */
-var color_scheme_solarized_light = {
-	"name": "solarized (light)",
-	"colors": solarized_colors(),
-	
-	'preferred_background': '#' + solarized.base3,
-	
-	'autosuggestion': solarized.base1,
-	'command': solarized.base01,
-	'comment': solarized.base1,
-	'end': solarized.blue,
-	'error': solarized.red,
-	'param': solarized.base00,
-	'quote': solarized.base0,
-	'redirection': solarized.violet
-};
-
-var color_scheme_solarized_dark = {
-	"name": "solarized (dark)",
-	"colors": solarized_colors(),
-	
-	'preferred_background': '#' + solarized.base03,
-	
-	'autosuggestion': solarized.base01,
-	'command': solarized.base1,
-	'comment': solarized.base01,
-	'end': solarized.blue,
-	'error': solarized.red,
-	'param': solarized.base0,
-	'quote': solarized.base00,
-	'redirection': solarized.violet
-};
 
 var color_scheme_fish_default = {
 	"name": "fish default",
@@ -1385,6 +1371,219 @@ var color_scheme_fish_default = {
 	'quote': '999900',
 	'end': '009900'
 };
+
+
+var TomorrowTheme = {
+	tomorrow_night: {'Background': '1d1f21', 'Current Line': '282a2e', 'Selection': '373b41', 'Foreground': 'c5c8c6', 'Comment': '969896', 'Red': 'cc6666', 'Orange': 'de935f',  'Yellow': 'f0c674', 'Green': 'b5bd68', 'Aqua': '8abeb7', 'Blue': '81a2be', 'Purple': 'b294bb'
+	},
+	
+	tomorrow: {'Background': 'ffffff', 'Current Line': 'efefef', 'Selection': 'd6d6d6', 'Foreground': '4d4d4c', 'Comment': '8e908c', 'Red': 'c82829', 'Orange': 'f5871f', 'Yellow': 'eab700', 'Green': '718c00', 'Aqua': '3e999f', 'Blue': '4271ae', 'Purple': '8959a8'
+	},
+	
+	tomorrow_night_bright: {'Background': '000000', 'Current Line': '2a2a2a', 'Selection': '424242', 'Foreground': 'eaeaea', 'Comment': '969896', 'Red': 'd54e53', 'Orange': 'e78c45', 'Yellow': 'e7c547', 'Green': 'b9ca4a', 'Aqua': '70c0b1', 'Blue': '7aa6da', 'Purple': 'c397d8'},
+	
+	apply: function(theme, receiver){
+		receiver['autosuggestion'] = theme['Comment']
+		receiver['command'] = theme['Purple']
+		receiver['comment'] = theme['Yellow'] /* we want to use comment for autosuggestions */
+		receiver['end'] = theme['Purple']
+		receiver['error'] = theme['Red']
+		receiver['param'] = theme['Blue']
+		receiver['quote'] = theme['Green']
+		receiver['redirection'] = theme['Aqua']
+		
+		receiver['colors'] = []
+		for (var key in theme) receiver['colors'].push(theme[key])
+	}
+}
+
+
+var solarized = {
+	base03: '002b36', base02: '073642', base01: '586e75', base00: '657b83', base0: '839496', base1: '93a1a1', base2: 'eee8d5', base3: 'fdf6e3', yellow: 'b58900', orange: 'cb4b16', red: 'dc322f', magenta: 'd33682', violet: '6c71c4', blue: '268bd2', cyan: '2aa198', green: '859900'
+};
+
+/* Sample color schemes */
+var color_scheme_solarized_light = {
+	name: "Solarized Light",
+	colors: dict_values(solarized),
+	
+	preferred_background: '#' + solarized.base3,
+	
+	autosuggestion: solarized.base1,
+	command: solarized.base01,
+	comment: solarized.base1,
+	end: solarized.blue,
+	error: solarized.red,
+	param: solarized.base00,
+	quote: solarized.base0,
+	redirection: solarized.violet,
+	
+	url: 'http://ethanschoonover.com/solarized'
+};
+
+var color_scheme_solarized_dark = {
+	name: "Solarized Dark",
+	colors: dict_values(solarized),
+	preferred_background: '#' + solarized.base03,
+	
+	autosuggestion: solarized.base01,
+	command: solarized.base1,
+	comment: solarized.base01,
+	end: solarized.blue,
+	error: solarized.red,
+	param: solarized.base0,
+	quote: solarized.base00,
+	redirection: solarized.violet,
+	
+	url: 'http://ethanschoonover.com/solarized'
+};
+
+var color_scheme_tomorrow = {
+	name: 'Tomorrow',
+	preferred_background: 'white',
+	url: 'https://github.com/chriskempson/tomorrow-theme'
+}
+TomorrowTheme.apply(TomorrowTheme.tomorrow, color_scheme_tomorrow)
+
+var color_scheme_tomorrow_night = {
+	name: 'Tomorrow Night',
+	preferred_background: '#232323',
+	url: 'https://github.com/chriskempson/tomorrow-theme'
+}
+TomorrowTheme.apply(TomorrowTheme.tomorrow_night, color_scheme_tomorrow_night)
+
+var color_scheme_tomorrow_night_bright = {
+	'name': 'Tomorrow Night Bright',
+	'preferred_background': 'black',
+	'url': 'https://github.com/chriskempson/tomorrow-theme',
+
+}
+TomorrowTheme.apply(TomorrowTheme.tomorrow_night_bright, color_scheme_tomorrow_night_bright)
+
+function construct_scheme_analogous(label, background, color_list) {
+	return {
+		name: label,
+		preferred_background: background,
+		colors: color_list,
+		
+		command: color_list[0],
+		quote: color_list[6],
+		param: color_list[5],
+		autosuggestion: color_list[4],
+		
+		error: color_list[9],
+		comment: color_list[12],
+		
+		end: color_list[10],
+		redirection: color_list[11]
+	};
+}
+
+function construct_scheme_triad(label, background, color_list) {
+	return {
+		name: label,
+		preferred_background: background,
+		colors: color_list,
+		
+		command: color_list[0],
+		quote: color_list[2],
+		param: color_list[1],
+		autosuggestion: color_list[3],
+		redirection: color_list[4],
+		
+		error: color_list[8],
+		comment: color_list[10],
+		
+		end: color_list[7],
+	};
+}
+
+function construct_scheme_complementary(label, background, color_list) {
+	return {
+		name: label,
+		preferred_background: background,
+		colors: color_list,
+		
+		command: color_list[0],
+		quote: color_list[4],
+		param: color_list[3],
+		autosuggestion: color_list[2],
+		redirection: color_list[6],
+		
+		error: color_list[5],
+		comment: color_list[8],
+		
+		end: color_list[9],
+	};
+}
+
+function construct_color_scheme_mono(label, background, from_end) {
+	var mono_colors = ['000000', '121212', '1c1c1c', '262626', '303030', '3a3a3a', '444444', '4e4e4e', '585858', '5f5f5f', '626262', '6c6c6c', '767676', '808080', '878787', '8a8a8a', '949494', '9e9e9e', 'a8a8a8', 'afafaf', 'b2b2b2', 'bcbcbc', 'c6c6c6', 'd0d0d0', 'd7d7d7', 'dadada', 'e4e4e4', 'eeeeee', 'ffffff'];
+	
+    if (from_end) mono_colors.reverse();
+    
+	return {
+		name: label,
+		preferred_background: background,
+		colors: mono_colors,
+		
+		autosuggestion: '777777',
+		command: mono_colors[0],
+		comment: mono_colors[7],
+		end: mono_colors[12],
+		error: mono_colors[20],
+		param: mono_colors[4],
+		quote: mono_colors[10],
+		redirection: mono_colors[15]
+	};
+}
+
+var additional_color_schemes = [
+	construct_scheme_analogous('Snow Day', 'white', ['164CC9', '325197', '072D83', '4C7AE4', '7596E4', '4319CC', '4C3499', '260885', '724EE5', '9177E5', '02BDBD', '248E8E', '007B7B', '39DEDE', '65DEDE']),
+	
+	construct_scheme_analogous('Lava', '#232323', ['FF9400', 'BF8330', 'A66000', 'FFAE40', 'FFC473', 'FFC000', 'BF9C30', 'A67D00', 'FFD040', 'FFDD73', 'FF4C00', 'BF5B30', 'A63100', 'FF7940', 'FF9D73']),
+	
+	construct_scheme_analogous('Seaweed', '#232323', ['00BF32', '248F40', '007C21', '38DF64', '64DF85', '04819E', '206676', '015367', '38B2CE', '60B9CE', '8EEB00', '7CB02C', '5C9900', 'ACF53D', 'C0F56E']),
+	
+	construct_scheme_triad('Fairground', '#003', ['0772A1', '225E79', '024A68', '3BA3D0', '63AFD0', 'D9005B', 'A3295C', '8D003B', 'EC3B86', 'EC6AA1', 'FFE100', 'BFAE30', 'A69200', 'FFE840', 'FFEE73']),
+	
+	construct_scheme_complementary('Bay Cruise', 'black', ['009999', '1D7373', '006363', '33CCCC', '5CCCCC', 'FF7400', 'BF7130', 'A64B00', 'FF9640', 'FFB273']),
+
+{
+	'name': 'Old School',
+	'preferred_background': 'black',
+	
+	colors: ['00FF00', '30BE30', '00A400', '44FF44', '7BFF7B', 'FF0000', 'BE3030', 'A40000', 'FF7B7B', '777777', 'CCCCCC'],
+	
+	autosuggestion: '777777',
+	command: '00FF00',
+	comment: '30BE30',
+	end: 'FF7B7B',
+	error: 'A40000',
+	param: '30BE30',
+	quote: '44FF44',
+	redirection: '7BFF7B'
+},
+
+{
+	'name': 'Just a Touch',
+	'preferred_background': 'black',
+	
+	colors: ['B0B0B0', '969696', '789276', 'F4F4F4', 'A0A0F0', '666A80', 'F0F0F0', 'D7D7D7', 'B7B7B7', 'FFA779', 'FAFAFA'],
+	
+	autosuggestion: '9C9C9C',
+	command: 'F4F4F4',
+	comment: 'B0B0B0',
+	end: '969696',
+	error: 'FFA779',
+	param: 'A0A0F0',
+	quote: '666A80',
+	redirection: 'FAFAFA'
+},
+
+construct_color_scheme_mono('Mono Lace', 'white', false),
+construct_color_scheme_mono('Mono Smoke', 'black', true)
+];
 
 function FishColorPickerModel() {
 	var self = this;
@@ -1407,7 +1606,9 @@ function FishColorPickerModel() {
 	self.color_settings = ko.observableArray([]);
 	
 	/* Array of FishColorSchemes */
-	self.color_schemes = [color_scheme_fish_default, color_scheme_solarized_light, color_scheme_solarized_dark];
+	self.color_schemes = [color_scheme_fish_default, color_scheme_solarized_light, color_scheme_solarized_dark, color_scheme_tomorrow, color_scheme_tomorrow_night, color_scheme_tomorrow_night_bright];
+	for (var i=0; i < additional_color_schemes.length; i++)
+		self.color_schemes.push(additional_color_schemes[i])
 	
 	/* The color scheme that is selected */
 	self.selected_color_scheme = ko.observable();
@@ -1515,6 +1716,10 @@ function FishColorPickerModel() {
 			return style.background_color;
 		}
 	});
+	
+	self.save_selected_colors = function(){
+		
+	};
 	
 	/* Return the foreground color for a given named setting
 	   See http://stackoverflow.com/questions/6706281/knockoutjs-can-we-create-a-dependentobservable-function-with-a-parameter for how this works

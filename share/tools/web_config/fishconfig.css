@@ -305,8 +305,12 @@ body {
 .colorpicker_text_sample_tight {
 	font-size: 10pt;
 	line-height: 1.2em;
-	margin: 0px 5px;
+	margin: 0px 6px;
+	max-width: 220px;
 	padding: 5px;
+	white-space:nowrap;
+	overflow: hidden;
+	text-overflow: clip;
 }
 
 .color_picker_background_cells {
@@ -324,9 +328,22 @@ body {
 	float: left;
 }
 
-.color_scheme_choice {
+.color_scheme_choice_label {
 	margin-left: 10px;
+	margin-bottom: 3px;
 	cursor: pointer;
+	font-size: 12pt;
+	white-space: normal;
+}
+
+.color_scheme_choices_list {
+	overflow-y: hidden; /* makes our height account for floats */
+	padding:  0 10px 15px 10px;  /* top right bottom left */
+}
+
+.color_scheme_choice_container {
+	float: left;
+	padding: 5px;
 }
 
 .fake_cursor {
@@ -380,16 +397,15 @@ img.delete_icon {
 	display: table;
 }
 
-.prompt_save_button {
+.save_button, .prompt_save_button {
 	border-radius: 5px;
-	border: solid #474747 1px;
-	text-shadow: 0px 1px #000;
+	border: solid rgba(71,71,71,0.5) 1px;
 	padding: 5px 8px;
 	font-size: 12pt;
 	display: inline-block;
 	margin-top: 12px;
-	background-color: #282828;
-	color: #DDD;
+	background-color: rgba(128,128,128,0.2);
+	color: #FFF;
 	cursor: pointer;
 }
 
@@ -422,3 +438,10 @@ img.delete_icon {
 	white-space: pre-wrap;
 	padding: 25px 3px;
 }
+
+.external_link_img {
+	width: 16px;
+	height: 16px;
+	vertical-align: text-top;
+	margin-left: 10px;
+};

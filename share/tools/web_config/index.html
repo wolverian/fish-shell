@@ -124,18 +124,18 @@
 	
 	<div data-bind="visible: selected_model_name() == 'color_picker'">
 		<!-- ko with: color_picker -->
-		<span style="padding-left: 25px">Click to customize each color:</span>
+		<span style="padding-left: 25px">Click to customize each color:</span><br>
 		<div class="colorpicker_text_sample" data-bind="style: {backgroundColor: selected_sample_text_background_color}">
 			<div class="color_picker_background_cells" data-bind="foreach: sample_text_background_colors">
 				<div data-bind="style: { 'backgroundColor': $data}, click: $parent.selected_sample_text_background_color"></div>
 			</div>
 			<!-- This is the sample text -->
-			<span data-bind="style: { 'color': $data.fg_color('command')}, click: $data.select_setting_name.bind($data, 'command')">/five/jumping</span>
-			<span data-bind="style: { 'color': $data.fg_color('param')}, click: $data.select_setting_name.bind($data, 'param')">wizards</span>
+			<span data-bind="style: { 'color': $data.fg_color('command')}, click: $data.select_setting_name.bind($data, 'command')">/bright/vixens</span>
+			<span data-bind="style: { 'color': $data.fg_color('param')}, click: $data.select_setting_name.bind($data, 'param')">jump</span>
 			<span data-bind="style: { 'color': $data.fg_color('end')}, click: $data.select_setting_name.bind($data, 'end')">|</span>
-			<span data-bind="style: { 'color': $data.fg_color('command')}, click: $data.select_setting_name.bind($data, 'command')">hex</span>
-			<span data-bind="style: { 'color': $data.fg_color('quote')}, click: $data.select_setting_name.bind($data, 'quote')"> "bolty" </span>
-			<span data-bind="style: { 'color': $data.fg_color('redirection')}, click: $data.select_setting_name.bind($data, 'redirection')">&gt; quick</span>
+			<span data-bind="style: { 'color': $data.fg_color('command')}, click: $data.select_setting_name.bind($data, 'command')">dozy</span>
+			<span data-bind="style: { 'color': $data.fg_color('quote')}, click: $data.select_setting_name.bind($data, 'quote')"> "fowl" </span>
+			<span data-bind="style: { 'color': $data.fg_color('redirection')}, click: $data.select_setting_name.bind($data, 'redirection')">&gt; quack</span>
 			<span data-bind="style: { 'color': $data.fg_color('end')}, click: $data.select_setting_name.bind($data, 'end')">&</span>
 			<br>
 			<span data-bind="style: { 'color': $data.fg_color('command')}, click: $data.select_setting_name.bind($data, 'command')">echo</span>
@@ -144,8 +144,11 @@
 			<span data-bind="style: { 'color': $data.fg_color('comment')}, click: $data.select_setting_name.bind($data, 'comment')"># This is a comment</span>
 			<br>
 			<span data-bind="style: { 'color': $data.fg_color('command')}, click: $data.select_setting_name.bind($data, 'command')">Th</span><span data-bind="style: { 'color': $data.fg_color('autosuggestion')}, click: $data.select_setting_name.bind($data, 'autosuggestion')"><span class="fake_cursor"><span style="visibility: hidden">i</span></span>s is an autosuggestion</span>
+
+			<span class="save_button" style="position: absolute; right: 5px; bottom: 5px;" data-bind="style: {'color': text_color_for_color($data.selected_sample_text_background_color())}, click: $data.save_selected_colors()">Apply</span>
+
 		</div>
-		
+				
 		<!-- 						
 						data-bind="style: {'backgroundColor': '#' + $data, 'color': '#' + $data, 'border-color': 'black'},
 								   css: { 'colorpicker_cell_selected': $data === $parents[1].selected_color()},
@@ -153,7 +156,7 @@
 
 		 -->
 		
-		<table class="colorpicker_term256" style="margin: 0px 20px; display: none">
+		<table class="colorpicker_term256" style="margin: 0px 20px;">
 			<tbody data-bind="foreach: color_arrays_array">
 				<tr class="colorpicker_term256_row" data-bind="foreach: $data">
 					<td class="colorpicker_term256_cell"
@@ -166,16 +169,19 @@
 			<!-- /ko -->
 		</table>
 		
-		<div data-bind="foreach: color_schemes">
-			<div style="float: left" data-bind="click: $parent.select_color_scheme">
-				<div class="color_scheme_choice" data-bind="text: name"></div>
+		<div data-bind="foreach: color_schemes" class="color_scheme_choices_list">
+			<div class="color_scheme_choice_container" data-bind="click: $parent.select_color_scheme">
+				<div class="color_scheme_choice_label">
+					<!-- This click/clickBubble nonsense is so that we can have a separate URL inside a parent with an onClick handler -->
+					<span data-bind="text: name"></span><a data-bind="if: $data.url, click: function(){return true;}, clickBubble: false, attr: { href: $data.url}"><img class="external_link_img" src="external_link.png"></a>
+				</div>
 				<div class="colorpicker_text_sample_tight" data-bind="style: {backgroundColor: preferred_background}">
-					<span data-bind="style: { 'color': command}">/five/jumping</span>
-					<span data-bind="style: { 'color': param}">wizards</span>
+					<span data-bind="style: { 'color': command}">/bright/vixens</span>
+					<span data-bind="style: { 'color': param}">jump</span>
 					<span data-bind="style: { 'color': end}">|</span>
-					<span data-bind="style: { 'color': command}">hex</span>
-					<span data-bind="style: { 'color': quote}"> "bolty" </span>
-					<span data-bind="style: { 'color': redirection}">&gt; quick</span>
+					<span data-bind="style: { 'color': command}">dozy</span>
+					<span data-bind="style: { 'color': quote}"> "fowl" </span>
+					<span data-bind="style: { 'color': redirection}">&gt; quack</span>
 					<span data-bind="style: { 'color': end}">&</span>
 					<br>
 					<span data-bind="style: { 'color': command}">echo</span>
