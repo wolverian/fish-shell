@@ -118,10 +118,26 @@ int wcsfilecmp(const wchar_t *a, const wchar_t *b)
     return res;
 }
 
+static long long timeval_to_usec(const struct timeval *tv)
+{
+    return 1000000LL*tv->tv_sec + tv->tv_usec;
+}
+
 long long get_time()
 {
     struct timeval time_struct;
     gettimeofday(&time_struct, 0);
-    return 1000000ll*time_struct.tv_sec+time_struct.tv_usec;
+    return timeval_to_usec(&time_struct);
 }
 
+struct usage_timing_t get_current_usage()
+{
+    struct usage_timing_t result = {};
+    result.real_time = get_time();
+    
+    struct rusage usage;
+    if (getrusage(RUSAGE_SELF, &usage))
+    {
+        
+    }
+}

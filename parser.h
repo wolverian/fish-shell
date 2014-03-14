@@ -286,6 +286,9 @@ private:
     
     /** Indicates that we are within the process of initializing fish */
     bool is_within_fish_initialization;
+    
+    /** Whether profiling is enabled. We profile if this is set or g_always_profile is set */
+    bool profiling_temporarily_enabled;
 
     /** Stack of execution contexts. We own these pointers and must delete them */
     std::vector<parse_execution_context_t *> execution_contexts;
@@ -451,6 +454,10 @@ public:
         return my_job_list;
     }
     
+    /** Profiling support */
+    bool get_profiling_temporarily_enabled() const;
+    void set_profiling_temporarily_enabled(bool flag);
+    
     /* Hackish. In order to correctly report the origin of code with no associated file, we need to know whether it's run during initialization or not. */
     void set_is_within_fish_initialization(bool flag);
 
@@ -520,9 +527,9 @@ public:
     void init();
 
     /**
-       Output profiling data to the given filename
+       Output profiling data to the given filename. If NULL, emits to stderr.
     */
-    void emit_profiling(const char *path) const;
+    void emit_profiling(const char *path);
 
     /**
        This function checks if the specified string is a help option.

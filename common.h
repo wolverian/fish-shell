@@ -147,9 +147,9 @@ extern wchar_t omitted_newline_char;
 extern int debug_level;
 
 /**
-   Profiling flag. True if commands should be profiled.
+   Profiling flag. True if commands should always be profiled.
 */
-extern bool g_profiling_active;
+extern bool g_always_profile;
 
 /**
    Name of the current program. Should be set at startup. Used by the

@@ -198,7 +198,14 @@ public:
 
     /* Given a job, return all of its statements. These are 'specific statements' (e.g. symbol_decorated_statement, not symbol_statement) */
     parse_node_list_t specific_statements_for_job(const parse_node_t &job) const;
+    
+    /* Given a job or a job continuation, returns the following continuation */
+    const parse_node_t *continuation_for_job(const parse_node_t &job) const;
+    
+    /* Given a job, indicate if it is timed */
+    bool job_is_timed(const parse_node_t &job) const;
 };
+
 
 /* The big entry point. Parse a string, attempting to produce a tree for the given goal type */
 bool parse_tree_from_string(const wcstring &str, parse_tree_flags_t flags, parse_node_tree_t *output, parse_error_list_t *errors, parse_token_type_t goal = symbol_job_list);
@@ -213,7 +220,9 @@ bool parse_tree_from_string(const wcstring &str, parse_tree_flags_t flags, parse
 
 # A job is a non-empty list of statements, separated by pipes. (Non-empty is useful for cases like if statements, where we require a command). To represent "non-empty", we require a statement, followed by a possibly empty job_continuation
 
-    job = statement job_continuation
+    job = statement job_continuation |
+          <TIME> statement job_continuation
+ 
     job_continuation = <empty> |
                        <TOK_PIPE> statement job_continuation
 

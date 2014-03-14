@@ -300,6 +300,7 @@ parser_t::parser_t(enum parser_type_t type, bool errors) :
     err_pos(0),
     cancellation_requested(false),
     is_within_fish_initialization(false),
+    profiling_temporarily_enabled(false),
     current_tokenizer(NULL),
     current_tokenizer_pos(0),
     job_start_pos(0),
@@ -321,6 +322,16 @@ parser_t &parser_t::principal_parser(void)
         s_principal_parser = &parser;
     }
     return parser;
+}
+
+bool parser_t::get_profiling_temporarily_enabled() const
+{
+    return profiling_temporarily_enabled;
+}
+
+void parser_t::set_profiling_temporarily_enabled(bool flag)
+{
+    profiling_temporarily_enabled = flag;
 }
 
 void parser_t::set_is_within_fish_initialization(bool flag)
@@ -635,10 +646,10 @@ static void print_profile(const std::vector<profile_item_t*> &items,
     }
 }
 
-void parser_t::emit_profiling(const char *path) const
+void parser_t::emit_profiling(const char *path)
 {
     /* Save profiling information. OK to not use CLO_EXEC here because this is called while fish is dying (and hence will not fork) */
-    FILE *f = fopen(path, "w");
+    FILE *f = path ? fopen(path, "w") : stderr;
     if (!f)
     {
         debug(1,
@@ -658,10 +669,18 @@ void parser_t::emit_profiling(const char *path) const
             print_profile(profile_items, f);
         }
 
-        if (fclose(f))
+        if (f != stderr && fclose(f))
         {
             wperror(L"fclose");
         }
+    }
+    
+    /* Clean up profile items */
+    while (! profile_items.empty())
+    {
+        profile_item_t *item = profile_items.back();
+        profile_items.pop_back();
+        delete item;
     }
 }
 
@@ -1239,7 +1258,7 @@ job_t *parser_t::job_get_from_pid(int pid)
 profile_item_t *parser_t::create_profile_item()
 {
     profile_item_t *result = NULL;
-    if (g_profiling_active)
+    if (profiling_temporarily_enabled || g_always_profile)
     {
         result = new profile_item_t();
         profile_items.push_back(result);

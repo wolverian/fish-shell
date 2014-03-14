@@ -68,4 +68,18 @@ int wcsfilecmp(const wchar_t *a, const wchar_t *b);
 */
 long long get_time();
 
+/* Support for getting rusage-style times. All of these values are in microseconds. */
+struct usage_timing_t
+{
+    /* microseconds since the epoch */
+    long long real_time;
+    
+    /* rusage-style fields (since start) */
+    long long user_time;
+    long long system_time;
+};
+
+struct usage_timing_t get_current_usage();
+
+
 #endif

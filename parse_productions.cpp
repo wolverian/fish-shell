@@ -82,9 +82,20 @@ RESOLVE(job_list)
 
 PRODUCTIONS(job) =
 {
-    {symbol_statement, symbol_job_continuation}
+    {symbol_statement, symbol_job_continuation},
+    {KEYWORD(parse_keyword_time), symbol_statement, symbol_job_continuation}
 };
-RESOLVE_ONLY(job)
+RESOLVE(job)
+{
+    switch (token1.keyword)
+    {
+        case parse_keyword_time:
+            return 1;
+            
+        default:
+            return 0;
+    }
+}
 
 PRODUCTIONS(job_continuation) =
 {

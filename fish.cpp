@@ -351,7 +351,7 @@ static int fish_parse_opt(int argc, char **argv, std::vector<std::string> *out_c
             case 'p':
             {
                 s_profiling_output_filename = optarg;
-                g_profiling_active = true;
+                g_always_profile = true;
                 break;
             }
 
@@ -527,7 +527,7 @@ int main(int argc, char **argv)
     restore_term_mode();
     restore_term_foreground_process_group();
     
-    if (g_profiling_active)
+    if (g_always_profile)
     {
         parser.emit_profiling(s_profiling_output_filename);
     }

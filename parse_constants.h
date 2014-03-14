@@ -91,6 +91,7 @@ enum parse_keyword_t
     parse_keyword_command,
     parse_keyword_builtin,
     parse_keyword_exec,
+    parse_keyword_time,
 
     LAST_KEYWORD = parse_keyword_builtin
 };

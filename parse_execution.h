@@ -72,9 +72,13 @@ private:
     /* Command not found support */
     void handle_command_not_found(const wcstring &cmd, const parse_node_t &statement_node, int err_code);
     
+    /* Profiling support */
+    void restore_and_emit_profiling(bool was_enabled);
+    
     /* Utilities */
     wcstring get_source(const parse_node_t &node) const;
     const parse_node_t *get_child(const parse_node_t &parent, node_offset_t which, parse_token_type_t expected_type = token_type_invalid) const;
+    const parse_node_t &find_child(const parse_node_t &parent, parse_token_type_t expected_type = token_type_invalid) const;
     node_offset_t get_offset(const parse_node_t &node) const;
     const parse_node_t *infinite_recursive_statement_in_job_list(const parse_node_t &job_list, wcstring *out_func_name) const;
 

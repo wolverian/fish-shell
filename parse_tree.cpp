@@ -232,7 +232,8 @@ keyword_map[] =
     KEYWORD_MAP(not),
     KEYWORD_MAP(command),
     KEYWORD_MAP(builtin),
-    KEYWORD_MAP(exec)
+    KEYWORD_MAP(exec),
+    KEYWORD_MAP(time)
 };
 
 wcstring keyword_description(parse_keyword_t k)
@@ -1395,8 +1396,8 @@ bool parse_node_tree_t::statement_is_in_pipeline(const parse_node_t &node, bool 
         else if (ancestor->type == symbol_job && include_first)
         {
             // Check to see if we have a job continuation that's not empty
-            const parse_node_t *continuation = this->get_child(*ancestor, 1, symbol_job_continuation);
-            result = (continuation != NULL && continuation->child_count > 0);
+            const parse_node_t *continuation = this->continuation_for_job(*ancestor);
+            result = continuation != NULL && continuation->child_count > 0;
         }
     }
 
@@ -1441,14 +1442,14 @@ parse_node_tree_t::parse_node_list_t parse_node_tree_t::specific_statements_for_
     parse_node_list_t result;
 
     /* Initial statement (non-specific) */
-    result.push_back(get_child(job, 0, symbol_statement));
+    result.push_back(&find_child(job, symbol_statement));
 
     /* Our cursor variable. Walk over the list of continuations. */
-    const parse_node_t *continuation = get_child(job, 1, symbol_job_continuation);
+    const parse_node_t *continuation = this->continuation_for_job(job);
     while (continuation != NULL && continuation->child_count > 0)
     {
-        result.push_back(get_child(*continuation, 1, symbol_statement));
-        continuation = get_child(*continuation, 2, symbol_job_continuation);
+        result.push_back(&find_child(*continuation, symbol_statement));
+        continuation = this->continuation_for_job(*continuation);
     }
 
     /* Result now contains a list of statements. But we want a list of specific statements e.g. symbol_switch_statement. So replace them in-place in the vector. */
@@ -1460,6 +1461,28 @@ parse_node_tree_t::parse_node_list_t parse_node_tree_t::specific_statements_for_
     }
 
     return result;
+}
+
+/* Given a job, return its continuation */
+const parse_node_t *parse_node_tree_t::continuation_for_job(const parse_node_t &job) const
+{
+    assert(job.type == symbol_job || job.type == symbol_job_continuation);
+    for (size_t i=0; i < job.child_count; i++)
+    {
+        const parse_node_t *child = this->get_child(job, i);
+        if (child->type == symbol_job_continuation)
+        {
+            return child;
+        }
+    }
+    return NULL;
+}
+
+bool parse_node_tree_t::job_is_timed(const parse_node_t &job) const
+{
+    assert(job.type == symbol_job);
+    assert(job.production_idx <= 1);
+    return job.production_idx == 1;
 }
 
 const parse_node_t *parse_node_tree_t::next_node_in_node_list(const parse_node_t &node_list, parse_token_type_t entry_type, const parse_node_t **out_list_tail) const
@@ -1500,6 +1523,8 @@ const parse_node_t *parse_node_tree_t::next_node_in_node_list(const parse_node_t
     assert(list_cursor == NULL || list_cursor->type == list_type);
     assert(list_entry == NULL || list_entry->type == entry_type);
     if (out_list_tail != NULL)
+    {
         *out_list_tail = list_cursor;
+    }
     return list_entry;
 }

@@ -1309,7 +1309,9 @@ const highlighter_t::color_array_t & highlighter_t::highlight()
 
         switch (node.type)
         {
-                // Color direct string descendants, e.g. 'for' and 'in'.
+            // Color direct string descendants, e.g. 'for' and 'in'.
+            // symbol_job participates by virtue of 'time'
+            case symbol_job:
             case symbol_while_header:
             case symbol_begin_header:
             case symbol_function_header:

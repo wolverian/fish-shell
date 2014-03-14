@@ -66,6 +66,12 @@ const parse_node_t *parse_execution_context_t::get_child(const parse_node_t &par
     return this->tree.get_child(parent, which, expected_type);
 }
 
+const parse_node_t &parse_execution_context_t::find_child(const parse_node_t &parent, parse_token_type_t expected_type) const
+{
+    return this->tree.find_child(parent, expected_type);
+}
+
+
 node_offset_t parse_execution_context_t::get_offset(const parse_node_t &node) const
 {
     /* Get the offset of a node via pointer arithmetic, very hackish */
@@ -125,7 +131,7 @@ const parse_node_t *parse_execution_context_t::infinite_recursive_statement_in_j
             continue;
         }
 
-        const parse_node_t &plain_statement = tree.find_child(statement, symbol_plain_statement);
+        const parse_node_t &plain_statement = find_child(statement, symbol_plain_statement);
         if (tree.decoration_for_plain_statement(plain_statement) != parse_statement_decoration_none)
         {
             /* This statement has a decoration like 'builtin' or 'command', and therefore is not infinite recursion. In particular this is what enables 'wrapper functions' */
@@ -225,9 +231,9 @@ parse_execution_context_t::execution_cancellation_reason_t parse_execution_conte
 bool parse_execution_context_t::job_is_simple_block(const parse_node_t &job_node) const
 {
     assert(job_node.type == symbol_job);
-
+    
     /* Must have one statement */
-    const parse_node_t &statement = *get_child(job_node, 0, symbol_statement);
+    const parse_node_t &statement = find_child(job_node, symbol_statement);
     const parse_node_t &specific_statement = *get_child(statement, 0);
     if (! specific_statement_type_is_redirectable_block(specific_statement))
     {
@@ -235,17 +241,16 @@ bool parse_execution_context_t::job_is_simple_block(const parse_node_t &job_node
         return false;
     }
 
-
     /* Must be no pipes */
-    const parse_node_t &continuation = *get_child(job_node, 1, symbol_job_continuation);
-    if (continuation.child_count > 0)
+    const parse_node_t *continuation = tree.continuation_for_job(job_node);
+    if (continuation->child_count > 0)
     {
         /* Multiple statements in this job, so there's pipes involved */
         return false;
     }
 
     /* Check for arguments and redirections. All of the above types have an arguments / redirections list. It must be empty. */
-    const parse_node_t &args_and_redirections = tree.find_child(specific_statement, symbol_arguments_or_redirections_list);
+    const parse_node_t &args_and_redirections = find_child(specific_statement, symbol_arguments_or_redirections_list);
     if (args_and_redirections.child_count > 0)
     {
         /* Non-empty, we have an argument or redirection */
@@ -818,6 +823,15 @@ void parse_execution_context_t::handle_command_not_found(const wcstring &cmd_str
     proc_set_last_status(err_code==ENOENT?STATUS_UNKNOWN_COMMAND:STATUS_NOT_EXECUTABLE);
 }
 
+void parse_execution_context_t::restore_and_emit_profiling(bool temp_enabled_profiling)
+{
+    if (temp_enabled_profiling)
+    {
+        parser->set_profiling_temporarily_enabled(false);
+        parser->emit_profiling(NULL);
+    }
+}
+
 /* Creates a 'normal' (non-block) process */
 parse_execution_result_t parse_execution_context_t::populate_plain_process(job_t *job, process_t *proc, const parse_node_t &statement)
 {
@@ -1008,7 +1022,7 @@ bool parse_execution_context_t::determine_io_chain(const parse_node_t &statement
     bool errored = false;
 
     /* We are called with a statement of varying types. We require that the statement have an arguments_or_redirections_list child. */
-    const parse_node_t &args_and_redirections_list = tree.find_child(statement_node, symbol_arguments_or_redirections_list);
+    const parse_node_t &args_and_redirections_list = find_child(statement_node, symbol_arguments_or_redirections_list);
 
     /* Get all redirection nodes underneath the statement */
     const parse_node_tree_t::parse_node_list_t redirect_nodes = tree.find_nodes(args_and_redirections_list, symbol_redirection);
@@ -1132,7 +1146,7 @@ parse_execution_result_t parse_execution_context_t::populate_boolean_process(job
     }
     else
     {
-        const parse_node_t &subject = *tree.get_child(bool_statement, 1, symbol_statement);
+        const parse_node_t &subject = find_child(bool_statement, symbol_statement);
         return this->populate_job_process(job, proc, subject);
     }
 }
@@ -1185,7 +1199,7 @@ parse_execution_result_t parse_execution_context_t::populate_job_process(job_t *
         case symbol_decorated_statement:
         {
             /* Get the plain statement. It will pull out the decoration itself */
-            const parse_node_t &plain_statement = tree.find_child(specific_statement, symbol_plain_statement);
+            const parse_node_t &plain_statement = find_child(specific_statement, symbol_plain_statement);
             result = this->populate_plain_process(job, proc, plain_statement);
             break;
         }
@@ -1208,18 +1222,17 @@ parse_execution_result_t parse_execution_context_t::populate_job_from_job_node(j
     j->set_command(get_source(job_node));
 
     /* We are going to construct process_t structures for every statement in the job. Get the first statement. */
-    const parse_node_t *statement_node = get_child(job_node, 0, symbol_statement);
-    assert(statement_node != NULL);
+    const parse_node_t &first_statement = find_child(job_node, symbol_statement);
 
     parse_execution_result_t result = parse_execution_success;
 
     /* Create processes. Each one may fail. */
     std::vector<process_t *> processes;
     processes.push_back(new process_t());
-    result = this->populate_job_process(j, processes.back(), *statement_node);
+    result = this->populate_job_process(j, processes.back(), first_statement);
 
     /* Construct process_ts for job continuations (pipelines), by walking the list until we hit the terminal (empty) job continuation */
-    const parse_node_t *job_cont = get_child(job_node, 1, symbol_job_continuation);
+    const parse_node_t *job_cont = tree.continuation_for_job(job_node);
     assert(job_cont != NULL);
     while (result == parse_execution_success && job_cont->child_count > 0)
     {
@@ -1236,15 +1249,14 @@ parse_execution_result_t parse_execution_context_t::populate_job_from_job_node(j
         processes.back()->pipe_write_fd = pipe_write_fd;
 
         /* Get the statement node and make a process from it */
-        const parse_node_t *statement_node = get_child(*job_cont, 1, symbol_statement);
-        assert(statement_node != NULL);
+        const parse_node_t &statement_node = find_child(*job_cont, symbol_statement);
 
         /* Store the new process (and maybe with an error) */
         processes.push_back(new process_t());
-        result = this->populate_job_process(j, processes.back(), *statement_node);
+        result = this->populate_job_process(j, processes.back(), statement_node);
 
         /* Get the next continuation */
-        job_cont = get_child(*job_cont, 2, symbol_job_continuation);
+        job_cont = tree.continuation_for_job(*job_cont);
         assert(job_cont != NULL);
     }
 
@@ -1306,6 +1318,13 @@ parse_execution_result_t parse_execution_context_t::run_1_job(const parse_node_t
     /* Save the node index */
     scoped_push<node_offset_t> saved_node_offset(&executing_node_idx, this->get_offset(job_node));
 
+    /* Turn on profiling if this job is timed */
+    bool temp_enable_profiling = tree.job_is_timed(job_node) && ! parser->get_profiling_temporarily_enabled();
+    if (temp_enable_profiling)
+    {
+        parser->set_profiling_temporarily_enabled(true);
+    }
+    
     /* Profiling support */
     long long start_time = 0, parse_time = 0, exec_time = 0;
     profile_item_t *profile_item = this->parser->create_profile_item();
@@ -1317,7 +1336,7 @@ parse_execution_result_t parse_execution_context_t::run_1_job(const parse_node_t
     /* When we encounter a block construct (e.g. while loop) in the general case, we create a "block process" that has a pointer to its source. This allows us to handle block-level redirections. However, if there are no redirections, then we can just jump into the block directly, which is significantly faster. */
     if (job_is_simple_block(job_node))
     {
-        const parse_node_t &statement = *get_child(job_node, 0, symbol_statement);
+        const parse_node_t &statement = find_child(job_node, symbol_statement);
         const parse_node_t &specific_statement = *get_child(statement, 0);
         assert(specific_statement_type_is_redirectable_block(specific_statement));
         switch (specific_statement.type)
@@ -1350,6 +1369,8 @@ parse_execution_result_t parse_execution_context_t::run_1_job(const parse_node_t
             profile_item->cmd = profiling_cmd_name_for_redirectable_block(specific_statement, this->tree, this->src);
             profile_item->skipped = result != parse_execution_success;
         }
+        
+        restore_and_emit_profiling(temp_enable_profiling);
         
         return result;
     }
@@ -1432,6 +1453,8 @@ parse_execution_result_t parse_execution_context_t::run_1_job(const parse_node_t
         result = parse_execution_success;
     }
 
+    /* Turn off profiling if we enabled it */
+    restore_and_emit_profiling(temp_enable_profiling);
 
     /* Clean up jobs. */
     job_reap(0);
