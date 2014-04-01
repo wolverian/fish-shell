@@ -5,20 +5,18 @@
 #include "proc.h"
 #include <vector>
 #include <algorithm>
+#include <bitset>
 
 using namespace parse_productions;
+
+typedef std::bitset<PARSE_TOKEN_TYPE_COUNT> token_type_set_t;
 
 static bool production_is_empty(const production_t *production)
 {
     return (*production)[0] == token_type_invalid;
 }
 
-void swap2(parse_node_tree_t &a, parse_node_tree_t &b)
-{
-    fprintf(stderr, "Swapping!\n");
-    // This uses the base vector implementation
-    a.swap(b);
-}
+static bool node_has_ancestor(const parse_node_tree_t &tree, const parse_node_t &node, const parse_node_t &proposed_ancestor);
 
 /** Returns a string description of this parse error */
 wcstring parse_error_t::describe_with_prefix(const wcstring &src, const wcstring &prefix, bool is_interactive, bool skip_caret) const
@@ -466,12 +464,15 @@ struct parse_stack_element_t
     enum parse_token_type_t type;
     enum parse_keyword_t keyword;
     node_offset_t node_idx;
+    bool outgoing;
+    bool wants_event;
+    bool telescope;
 
-    explicit parse_stack_element_t(parse_token_type_t t, node_offset_t idx) : type(t), keyword(parse_keyword_none), node_idx(idx)
+    explicit parse_stack_element_t(parse_token_type_t t, node_offset_t idx) : type(t), keyword(parse_keyword_none), node_idx(idx), outgoing(false), wants_event(false), telescope(false)
     {
     }
 
-    explicit parse_stack_element_t(production_element_t e, node_offset_t idx) : type(production_element_type(e)), keyword(production_element_keyword(e)), node_idx(idx)
+    explicit parse_stack_element_t(production_element_t e, node_offset_t idx) : type(production_element_type(e)), keyword(production_element_keyword(e)), node_idx(idx), outgoing(false), wants_event(false), telescope(false)
     {
     }
 
@@ -506,6 +507,12 @@ class parse_ll_t
 
     /* Whether we should collect error messages or not */
     bool should_generate_error_messages;
+    
+    /* Whether we telescope */
+    bool should_telescope;
+    
+    /* Types for which we want events */
+    token_type_set_t event_node_types;
 
     /* List of errors we have encountered */
     parse_error_list_t errors;
@@ -534,15 +541,50 @@ class parse_ll_t
     {
         return symbol_stack.back().type;
     }
-
-    // Pop from the top of the symbol stack, then push the given production, updating node counts. Note that production_t has type "pointer to array" so some care is required.
-    inline void symbol_stack_pop_push_production(const production_t *production)
+    
+    inline bool wants_events_for_node_type(parse_token_type_t type) const
     {
-        bool logit = false;
+        return event_node_types[type];
+    }
+    
+    inline void telescope_node(node_offset_t node_idx)
+    {
+        assert(node_idx < nodes.size());
+        fprintf(stderr, "Telescoping %lu nodes starting at %lu (total %lu)\n", nodes.size() - node_idx, node_idx, nodes.size());
+        /* We should only ever telescope the "end" of the tree. All nodes we delete should be ancestors of the given node */
+        if (1)
+        {
+            const parse_node_t &ancestor = nodes.at(node_idx);
+            for (size_t i=node_idx; i < nodes.size(); i++)
+            {
+                assert(node_has_ancestor(nodes, nodes.at(node_idx), ancestor));
+            }
+        }
+        
+        for (size_t i=0; i < nodes.size(); i++)
+        {
+            fprintf(stderr, "\t%2lu: %ls\n", i, nodes.at(i).describe().c_str());
+        }
+        
+        /* Erase all nodes from node_idx on */
+        nodes.erase(nodes.begin() + node_idx, nodes.end());
+        
+        fprintf(stderr, "After erasing:\n");
+        for (size_t i=0; i < nodes.size(); i++)
+        {
+            fprintf(stderr, "\t%2lu: %ls\n", i, nodes.at(i).describe().c_str());
+        }
+    }
+
+    
+    // Pop from the top of the symbol stack, then push the given production, updating node counts. Note that production_t has type "pointer to array" so some care is required.
+    inline void symbol_stack_pop_push_production(const production_t *production, parse_stack_element_t &stack_top)
+    {
+        bool logit = true;
         if (logit)
         {
             size_t count = 0;
-            fprintf(stderr, "Applying production:\n");
+            fprintf(stderr, "Applying production for %ls (%lu nodes):\n", stack_top.describe().c_str(), nodes.size());
             for (size_t i=0; i < MAX_SYMBOLS_PER_PRODUCTION; i++)
             {
                 production_element_t elem = (*production)[i];
@@ -558,8 +600,9 @@ class parse_ll_t
         }
 
         // Get the parent index. But we can't get the parent parse node yet, since it may be made invalid by adding children
-        const node_offset_t parent_node_idx = symbol_stack.back().node_idx;
-
+        const node_offset_t parent_node_idx = stack_top.node_idx;
+        const bool telescope_child_jobs = should_telescope && stack_top.type == symbol_job_list;
+        
         // Add the children. Confusingly, we want our nodes to be in forwards order (last token last, so dumps look nice), but the symbols should be reverse order (last token first, so it's lowest on the stack)
         const size_t child_start_big = nodes.size();
         assert(child_start_big < NODE_OFFSET_INVALID);
@@ -595,8 +638,25 @@ class parse_ll_t
         parent_node.child_start = child_start;
         parent_node.child_count = child_count;
 
-        // Replace the top of the stack with new stack elements corresponding to our new nodes. Note that these go in reverse order.
-        symbol_stack.pop_back();
+        // Handle eventing
+        if (wants_events_for_node_type(stack_top.type))
+        {
+            stack_top.wants_event = true;
+        }
+        
+        // Handle eventing
+        if (stack_top.telescope || stack_top.wants_event)
+        {
+            // Don't pop the stack. When we get back to this element, we'll notice it's outgoing
+            stack_top.outgoing = true;
+        }
+        else
+        {
+            // Pop the symbol stack
+            symbol_stack.pop_back();
+        }
+        
+        // Push onto the top of the stack new stack elements corresponding to our new nodes. Note that these go in reverse order
         symbol_stack.reserve(symbol_stack.size() + child_count);
         node_offset_t idx = child_count;
         while (idx--)
@@ -604,13 +664,18 @@ class parse_ll_t
             production_element_t elem = (*production)[idx];
             PARSE_ASSERT(production_element_is_valid(elem));
             symbol_stack.push_back(parse_stack_element_t(elem, child_start + idx));
+            
+            if (telescope_child_jobs && production_element_type(elem) == symbol_job)
+            {
+                symbol_stack.back().telescope = true;
+            }
         }
     }
-
+    
 public:
 
     /* Constructor */
-    parse_ll_t(enum parse_token_type_t goal) : fatal_errored(false), should_generate_error_messages(true)
+    parse_ll_t(enum parse_token_type_t goal) : fatal_errored(false), should_generate_error_messages(true), should_telescope(false)
     {
         this->symbol_stack.reserve(16);
         this->nodes.reserve(64);
@@ -618,7 +683,7 @@ public:
     }
 
     /* Input */
-    void accept_tokens(parse_token_t token1, parse_token_t token2);
+    node_offset_t accept_tokens(parse_token_t token1, parse_token_t token2);
 
     /* Report tokenizer errors */
     void report_tokenizer_error(parse_token_t token, int tok_err, const wchar_t *tok_error);
@@ -642,10 +707,25 @@ public:
     void reset_symbols_and_nodes(enum parse_token_type_t goal);
 
     /* Once parsing is complete, determine the ranges of intermediate nodes */
-    void determine_node_ranges();
+    void determine_node_ranges(node_offset_t node_idx = NODE_OFFSET_INVALID);
 
     /* Acquire output after parsing. This transfers directly from within self */
     void acquire_output(parse_node_tree_t *output, parse_error_list_t *errors);
+    
+    const parse_node_tree_t &peek_tree() const
+    {
+        return nodes;
+    }
+    
+    void set_event_node_types(const token_type_set_t &set)
+    {
+        event_node_types = set;
+    }
+    
+    void set_telescope(bool flag)
+    {
+        should_telescope = flag;
+    }
 };
 
 void parse_ll_t::dump_stack(void) const
@@ -682,11 +762,17 @@ void parse_ll_t::dump_stack(void) const
 // Give each node a source range equal to the union of the ranges of its children
 // Terminal nodes already have source ranges (and no children)
 // Since children always appear after their parents, we can implement this very simply by walking backwards
-void parse_ll_t::determine_node_ranges(void)
+// If target_node is not NODE_OFFSET_INVALID, stop at target_node
+void parse_ll_t::determine_node_ranges(node_offset_t target_node)
 {
     size_t idx = nodes.size();
     while (idx--)
     {
+        if (target_node != NODE_OFFSET_INVALID && idx < target_node)
+        {
+            break;
+        }
+        
         parse_node_t *parent = &nodes[idx];
 
         // Skip nodes that already have a source range. These are terminal nodes.
@@ -988,7 +1074,7 @@ bool parse_ll_t::top_node_handle_terminal_types(parse_token_t token)
     return handled;
 }
 
-void parse_ll_t::accept_tokens(parse_token_t token1, parse_token_t token2)
+node_offset_t parse_ll_t::accept_tokens(parse_token_t token1, parse_token_t token2)
 {
     bool logit = false;
     if (logit)
@@ -998,6 +1084,9 @@ void parse_ll_t::accept_tokens(parse_token_t token1, parse_token_t token2)
     PARSE_ASSERT(token1.type >= FIRST_PARSE_TOKEN_TYPE);
 
     bool consumed = false;
+    
+    // The node we are returning as an event
+    node_offset_t event_node = NODE_OFFSET_INVALID;
 
     // Handle special types specially. Note that these are the only types that can be pushed if the symbol stack is empty.
     if (token1.type == parse_special_type_parse_error || token1.type == parse_special_type_tokenizer_error || token1.type == parse_special_type_comment)
@@ -1013,7 +1102,7 @@ void parse_ll_t::accept_tokens(parse_token_t token1, parse_token_t token2)
             this->fatal_errored = true;
     }
 
-    while (! consumed && ! this->fatal_errored)
+    while (! consumed && event_node == NODE_OFFSET_INVALID && ! this->fatal_errored)
     {
         PARSE_ASSERT(! symbol_stack.empty());
 
@@ -1033,6 +1122,27 @@ void parse_ll_t::accept_tokens(parse_token_t token1, parse_token_t token2)
 
         // Get the production for the top of the stack
         parse_stack_element_t &stack_elem = symbol_stack.back();
+        
+        // If it's outgoing or telescoping, handle it and continue
+        if (stack_elem.outgoing)
+        {
+            if (stack_elem.wants_event)
+            {
+                event_node = stack_elem.node_idx;
+                // Don't want an event after this
+                stack_elem.wants_event = false;
+                break;
+            }
+            else if (stack_elem.telescope)
+            {
+                telescope_node(stack_elem.node_idx);
+            }
+                
+            symbol_stack.pop_back();
+            continue;
+        }
+        
+        
         parse_node_t &node = nodes.at(stack_elem.node_idx);
         const production_t *production = production_for_token(stack_elem.type, token1, token2, &node.production_idx, NULL /* error text */);
         if (production == NULL)
@@ -1053,7 +1163,7 @@ void parse_ll_t::accept_tokens(parse_token_t token1, parse_token_t token2)
 
             // Manipulate the symbol stack.
             // Note that stack_elem is invalidated by popping the stack.
-            symbol_stack_pop_push_production(production);
+            symbol_stack_pop_push_production(production, stack_elem);
 
             // Expect to not have an empty stack, unless this was the terminate type
             // Note we may not have an empty stack with the terminate type (i.e. incomplete input)
@@ -1065,6 +1175,7 @@ void parse_ll_t::accept_tokens(parse_token_t token1, parse_token_t token2)
             }
         }
     }
+    return event_node;
 }
 
 static parse_keyword_t keyword_for_token(token_type tok, const wchar_t *tok_txt)
@@ -1123,52 +1234,237 @@ static inline parse_token_t next_parse_token(tokenizer_t *tok)
     return result;
 }
 
+static tok_flags_t tokenizer_flags_from_parse_flags(parse_tree_flags_t parse_flags)
+{
+    tok_flags_t tok_options = 0;
+    if (parse_flags & parse_flag_include_comments)
+        tok_options |= TOK_SHOW_COMMENTS;
+    
+    if (parse_flags & parse_flag_accept_incomplete_tokens)
+        tok_options |= TOK_ACCEPT_UNFINISHED;
+    
+    if (parse_flags & parse_flag_squash_errors)
+        tok_options |= TOK_SQUASH_ERRORS;
+    
+    return tok_options;
+}
+
+parse_pump_t::parse_pump_t(const wcstring &str, parse_tree_flags_t flags, parse_token_type_t goal) :
+    tok(str.c_str(), tokenizer_flags_from_parse_flags(flags)),
+    parse_flags(flags),
+    goal_type(goal),
+    parser(new parse_ll_t(goal)),
+    errors((flags & parse_flag_squash_errors) ? NULL : new parse_error_list_t()),
+    tokens_consumed(0)
+{
+    parser->set_should_generate_error_messages(! (flags & parse_flag_squash_errors));
+    parser->set_telescope(true);
+    queue[0] = kInvalidToken;
+    queue[1] = kInvalidToken;
+}
+
+parse_pump_t::~parse_pump_t()
+{
+    delete parser;
+    if (errors != NULL)
+    {
+        delete errors;
+    }
+}
+
+const parse_node_tree_t &parse_pump_t::parse_tree() const
+{
+    return parser->peek_tree();
+}
+
+node_offset_t parse_pump_t::pump()
+{
+    node_offset_t result = NODE_OFFSET_INVALID;
+    for (size_t loop_count = 0; result == NODE_OFFSET_INVALID; loop_count++)
+    {
+        /* If this is the second or more pass through the loop and we got a terminate, then bail */
+        if (loop_count >= 1 && queue[0].type == parse_token_type_terminate)
+        {
+            break;
+        }
+        
+        /* Push a new token onto the queue if this is either the first or second invocation (so the queue is empty), or the second time through the loop. On the first time through the loop, we may exit early due to getting an event. */
+        if (tokens_consumed <= 1 || loop_count >= 1)
+        {
+            // Push a new token onto the queue
+            queue[0] = queue[1];
+            queue[1] = next_parse_token(&tok);
+            
+            /* Note that we consumed this token */
+            tokens_consumed++;
+        }
+        
+        /* If we got a terminate but are leaving things unterminated, then don't pass parse_token_type_terminate */
+        if (queue[0].type == parse_token_type_terminate && (parse_flags & parse_flag_leave_unterminated))
+        {
+            break;
+        }
+        
+        /* Pass these two tokens, unless we're still loading the queue. We know that queue[0] is valid; queue[1] may be invalid. */
+        if (tokens_consumed > 1)
+        {
+            result = parser->accept_tokens(queue[0], queue[1]);
+        }
+        
+        /* If we got a result, we're going to return it immediately */
+        if (result != NODE_OFFSET_INVALID)
+        {
+            parser->determine_node_ranges(result);
+            break;
+        }
+        
+        /* Handle tokenizer errors. This is a hack because really the parser should report this for itself; but it has no way of getting the tokenizer message */
+        if (queue[1].type == parse_special_type_tokenizer_error)
+        {
+            parser->report_tokenizer_error(queue[1], tok_get_error(&tok), tok_last(&tok));
+        }
+        
+        /* Handle errors */
+        if (parser->has_fatal_error())
+        {
+            if (parse_flags & parse_flag_continue_after_error)
+            {
+                /* Hack hack hack. Typically the parse error is due to the first token. However, if it's a tokenizer error, then has_fatal_error was set due to the check above; in that case the second token is what matters. */
+                size_t error_token_idx = (queue[1].type == parse_special_type_tokenizer_error ? 1 : 0);
+                
+                /* Mark a special error token, and then keep going */
+                const parse_token_t token = {parse_special_type_parse_error, parse_keyword_none, false, false, queue[error_token_idx].source_start, queue[error_token_idx].source_length};
+                parser->accept_tokens(token, kInvalidToken);
+                parser->reset_symbols(goal_type);
+            }
+            else
+            {
+                /* Bail out */
+                break;
+            }
+        }
+    }
+    return result;
+}
+
+void parse_pump_t::set_event_types(const parse_token_type_t *types, size_t count)
+{
+    token_type_set_t set;
+    for (size_t i=0; i < count; i++)
+    {
+        set.set(types[i], true);
+    }
+    this->parser->set_event_node_types(set);
+}
+
+bool parse_pump_t::pump(bool consume_all)
+{
+    /* Loop until we have a terminal token. */
+    const size_t initial_tokens_consumed = tokens_consumed;
+    while (queue[0].type != parse_token_type_terminate)
+    {
+        /* Push a new token onto the queue */
+        queue[0] = queue[1];
+        queue[1] = next_parse_token(&tok);
+        
+        /* If we are leaving things unterminated, then don't pass parse_token_type_terminate */
+        if (queue[0].type == parse_token_type_terminate && (parse_flags & parse_flag_leave_unterminated))
+        {
+            break;
+        }
+        
+        /* Pass these two tokens, unless we're still loading the queue. We know that queue[0] is valid; queue[1] may be invalid. Loop until we don't get an event */
+        if (tokens_consumed > 0)
+        {
+            parser->accept_tokens(queue[0], queue[1]);
+        }
+        
+        /* Handle tokenizer errors. This is a hack because really the parser should report this for itself; but it has no way of getting the tokenizer message */
+        if (queue[1].type == parse_special_type_tokenizer_error)
+        {
+            parser->report_tokenizer_error(queue[1], tok_get_error(&tok), tok_last(&tok));
+        }
+        
+        /* Note that we consumed this token */
+        tokens_consumed++;
+        
+        /* Handle errors */
+        if (parser->has_fatal_error())
+        {
+            if (parse_flags & parse_flag_continue_after_error)
+            {
+                /* Hack hack hack. Typically the parse error is due to the first token. However, if it's a tokenizer error, then has_fatal_error was set due to the check above; in that case the second token is what matters. */
+                size_t error_token_idx = (queue[1].type == parse_special_type_tokenizer_error ? 1 : 0);
+                
+                /* Mark a special error token, and then keep going */
+                const parse_token_t token = {parse_special_type_parse_error, parse_keyword_none, false, false, queue[error_token_idx].source_start, queue[error_token_idx].source_length};
+                parser->accept_tokens(token, kInvalidToken);
+                parser->reset_symbols(goal_type);
+            }
+            else
+            {
+                /* Bail out */
+                break;
+            }
+        }
+        
+        /* If we should only consume one token, then jump */
+        if (! consume_all)
+        {
+            break;
+        }
+    }
+    
+    /* Return true if we consumed at least one */
+    return tokens_consumed > initial_tokens_consumed;
+}
+
 bool parse_tree_from_string(const wcstring &str, parse_tree_flags_t parse_flags, parse_node_tree_t *output, parse_error_list_t *errors, parse_token_type_t goal)
 {
     parse_ll_t parser(goal);
     parser.set_should_generate_error_messages(errors != NULL);
-
+    
     /* Construct the tokenizer */
     tok_flags_t tok_options = 0;
     if (parse_flags & parse_flag_include_comments)
         tok_options |= TOK_SHOW_COMMENTS;
-
+    
     if (parse_flags & parse_flag_accept_incomplete_tokens)
         tok_options |= TOK_ACCEPT_UNFINISHED;
-
+    
     if (errors == NULL)
         tok_options |= TOK_SQUASH_ERRORS;
-
+    
     tokenizer_t tok = tokenizer_t(str.c_str(), tok_options);
-
+    
     /* We are an LL(2) parser. We pass two tokens at a time. New tokens come in at index 1. Seed our queue with an initial token at index 1. */
     parse_token_t queue[2] = {kInvalidToken, kInvalidToken};
-
+    
     /* Loop until we have a terminal token. */
     for (size_t token_count = 0; queue[0].type != parse_token_type_terminate; token_count++)
     {
         /* Push a new token onto the queue */
         queue[0] = queue[1];
         queue[1] = next_parse_token(&tok);
-
+        
         /* If we are leaving things unterminated, then don't pass parse_token_type_terminate */
         if (queue[0].type == parse_token_type_terminate && (parse_flags & parse_flag_leave_unterminated))
         {
             break;
         }
-
+        
         /* Pass these two tokens, unless we're still loading the queue. We know that queue[0] is valid; queue[1] may be invalid. */
         if (token_count > 0)
         {
             parser.accept_tokens(queue[0], queue[1]);
         }
-
+        
         /* Handle tokenizer errors. This is a hack because really the parser should report this for itself; but it has no way of getting the tokenizer message */
         if (queue[1].type == parse_special_type_tokenizer_error)
         {
             parser.report_tokenizer_error(queue[1], tok_get_error(&tok), tok_last(&tok));
         }
-
+        
         /* Handle errors */
         if (parser.has_fatal_error())
         {
@@ -1176,7 +1472,7 @@ bool parse_tree_from_string(const wcstring &str, parse_tree_flags_t parse_flags,
             {
                 /* Hack hack hack. Typically the parse error is due to the first token. However, if it's a tokenizer error, then has_fatal_error was set due to the check above; in that case the second token is what matters. */
                 size_t error_token_idx = (queue[1].type == parse_special_type_tokenizer_error ? 1 : 0);
-
+                
                 /* Mark a special error token, and then keep going */
                 const parse_token_t token = {parse_special_type_parse_error, parse_keyword_none, false, false, queue[error_token_idx].source_start, queue[error_token_idx].source_length};
                 parser.accept_tokens(token, kInvalidToken);
@@ -1189,12 +1485,43 @@ bool parse_tree_from_string(const wcstring &str, parse_tree_flags_t parse_flags,
             }
         }
     }
-
+    
     // Teach each node where its source range is
     parser.determine_node_ranges();
-
+    
     // Acquire the output from the parser
     parser.acquire_output(output, errors);
+    
+#if 0
+    //wcstring result = dump_tree(this->parser->nodes, str);
+    //fprintf(stderr, "Tree (%ld nodes):\n%ls", this->parser->nodes.size(), result.c_str());
+    fprintf(stderr, "%lu nodes, node size %lu, %lu bytes\n", output->size(), sizeof(parse_node_t), output->size() * sizeof(parse_node_t));
+#endif
+    
+    // Indicate if we had a fatal error
+    return ! parser.has_fatal_error();
+}
+
+bool parse_tree_from_string2(const wcstring &str, parse_tree_flags_t parse_flags, parse_node_tree_t *output, parse_error_list_t *errors, parse_token_type_t goal)
+{
+    
+    if (errors == NULL)
+        parse_flags |= parse_flag_squash_errors;
+    
+    parse_pump_t pump(str, parse_flags, goal);
+    for (;;)
+    {
+        if (! pump.pump(false))
+        {
+            break;
+        }
+    }
+
+    // Teach each node where its source range is
+    pump.parser->determine_node_ranges();
+
+    // Acquire the output from the parser
+    pump.parser->acquire_output(output, errors);
 
 #if 0
     //wcstring result = dump_tree(this->parser->nodes, str);
@@ -1203,7 +1530,7 @@ bool parse_tree_from_string(const wcstring &str, parse_tree_flags_t parse_flags,
 #endif
 
     // Indicate if we had a fatal error
-    return ! parser.has_fatal_error();
+    return ! pump.parser->has_fatal_error();
 }
 
 const parse_node_t *parse_node_tree_t::get_child(const parse_node_t &parent, node_offset_t which, parse_token_type_t expected_type) const

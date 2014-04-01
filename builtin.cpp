@@ -3635,7 +3635,7 @@ int builtin_parse(parser_t &parser, wchar_t **argv)
     std::vector<char> txt;
     for (;;)
     {
-        char buff[256];
+        char buff[4096];
         ssize_t amt = read_loop(builtin_stdin, buff, sizeof buff);
         if (amt <= 0) break;
         txt.insert(txt.end(), buff, buff + amt);
@@ -3643,25 +3643,46 @@ int builtin_parse(parser_t &parser, wchar_t **argv)
     if (! txt.empty())
     {
         const wcstring src = str2wcstring(&txt.at(0), txt.size());
-        parse_node_tree_t parse_tree;
-        parse_error_list_t errors;
-        bool success = parse_tree_from_string(src, parse_flag_none, &parse_tree, &errors);
-        if (! success)
+        if (1)
         {
-            stdout_buffer.append(L"Parsing failed:\n");
-            for (size_t i=0; i < errors.size(); i++)
+            parse_pump_t pump(src, parse_flag_none);
+            const parse_token_type_t types[] = {symbol_job, parse_token_type_end};
+            pump.set_event_types(types, sizeof types / sizeof *types);
+            node_offset_t node_idx;
+            do
             {
-                stdout_buffer.append(errors.at(i).describe(src));
-                stdout_buffer.push_back(L'\n');
+                node_idx = pump.pump();
+                if (node_idx != NODE_OFFSET_INVALID)
+                {
+                    const parse_node_t &node = pump.parse_tree().at(node_idx);
+                    append_format(stdout_buffer, L"Node: %ls\n", node.describe().c_str());
+                }
             }
-
-            stdout_buffer.append(L"(Reparsed with continue after error)\n");
-            parse_tree.clear();
-            errors.clear();
-            parse_tree_from_string(src, parse_flag_continue_after_error, &parse_tree, &errors);
+            while (node_idx != NODE_OFFSET_INVALID);
         }
-        const wcstring dump = parse_dump_tree(parse_tree, src);
-        stdout_buffer.append(dump);
+        else
+        {
+            parse_node_tree_t parse_tree;
+            parse_error_list_t errors;
+            bool success = parse_tree_from_string(src, parse_flag_none, &parse_tree, &errors);
+            if (! success)
+            {
+                stdout_buffer.append(L"Parsing failed:\n");
+                for (size_t i=0; i < errors.size(); i++)
+                {
+                    stdout_buffer.append(errors.at(i).describe(src));
+                    stdout_buffer.push_back(L'\n');
+                }
+
+                stdout_buffer.append(L"(Reparsed with continue after error)\n");
+                parse_tree.clear();
+                errors.clear();
+                parse_tree_from_string(src, parse_flag_continue_after_error, &parse_tree, &errors);
+            }
+        
+            const wcstring dump = parse_dump_tree(parse_tree, src);
+            stdout_buffer.append(dump);            
+        }
     }
     return STATUS_BUILTIN_OK;
 }

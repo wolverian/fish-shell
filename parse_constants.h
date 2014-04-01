@@ -69,12 +69,16 @@ enum parse_token_type_t
     parse_special_type_parse_error,
     parse_special_type_tokenizer_error,
     parse_special_type_comment,
+    
+/* Count of the tokens. Not an enum to avoid the compiler warning about unhandled enumerations in switch statements */
+#define PARSE_TOKEN_TYPE_COUNT (parse_special_type_comment + 1)
 
     FIRST_TERMINAL_TYPE = parse_token_type_string,
     LAST_TERMINAL_TYPE = parse_token_type_terminate,
 
     LAST_TOKEN_OR_SYMBOL = parse_token_type_terminate,
-    FIRST_PARSE_TOKEN_TYPE = parse_token_type_string
+    FIRST_PARSE_TOKEN_TYPE = parse_token_type_string,
+    
 } __packed;
 
 enum parse_keyword_t
