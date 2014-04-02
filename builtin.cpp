@@ -3645,6 +3645,7 @@ int builtin_parse(parser_t &parser, wchar_t **argv)
         const wcstring src = str2wcstring(&txt.at(0), txt.size());
         if (1)
         {
+            fprintf(stderr, "Here we go\n");
             parse_pump_t pump(src, parse_flag_none);
             const parse_token_type_t types[] = {symbol_job, parse_token_type_end};
             pump.set_event_types(types, sizeof types / sizeof *types);
@@ -3655,7 +3656,8 @@ int builtin_parse(parser_t &parser, wchar_t **argv)
                 if (node_idx != NODE_OFFSET_INVALID)
                 {
                     const parse_node_t &node = pump.parse_tree().at(node_idx);
-                    append_format(stdout_buffer, L"Node: %ls\n", node.describe().c_str());
+                    //append_format(stdout_buffer, L"Node: %ls\n", node.describe().c_str());
+                    //append_format(stdout_buffer, L"%ls\n", parse_dump_tree(pump.parse_tree(), src).c_str());
                 }
             }
             while (node_idx != NODE_OFFSET_INVALID);

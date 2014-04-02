@@ -312,7 +312,12 @@ static wcstring token_type_user_presentable_description(parse_token_type_t type,
 wcstring parse_node_t::describe(void) const
 {
     wcstring result = token_type_description(type);
+    append_format(result, L" (parent %u)", this->parent);
     append_format(result, L" (prod %d)", this->production_idx);
+    if (child_count > 0)
+    {
+        append_format(result, L" (child %u-%u)", this->child_start, this->child_start + this->child_count - 1);
+    }
     return result;
 }
 
@@ -483,6 +488,11 @@ struct parse_stack_element_t
         {
             append_format(result, L" <%ls>", keyword_description(keyword).c_str());
         }
+        append_format(result, L" (node idx %u)", node_idx);
+        if (outgoing)
+        {
+            append_format(result, L" (outgoing)", node_idx);    
+        }
         return result;
     }
 
@@ -547,32 +557,74 @@ class parse_ll_t
         return event_node_types[type];
     }
     
-    inline void telescope_node(node_offset_t node_idx)
+    inline bool can_telescope_node_type(parse_token_type_t type) const
+    {
+        return should_telescope && type == symbol_job_list;
+    }
+    
+    inline void telescope_children(node_offset_t node_idx)
     {
         assert(node_idx < nodes.size());
-        fprintf(stderr, "Telescoping %lu nodes starting at %lu (total %lu)\n", nodes.size() - node_idx, node_idx, nodes.size());
-        /* We should only ever telescope the "end" of the tree. All nodes we delete should be ancestors of the given node */
-        if (1)
+        parse_node_t *parent = &nodes.at(node_idx);
+        node_offset_t first_child = parent->child_start;
+        
+        bool log_it = false;
+        
+        if (log_it)
         {
-            const parse_node_t &ancestor = nodes.at(node_idx);
-            for (size_t i=node_idx; i < nodes.size(); i++)
+            fprintf(stderr, "Telescoping %lu nodes starting at %u (total %lu)\n", nodes.size() - first_child, first_child, nodes.size());
+        }
+        
+        /* We should only ever telescope the "end" of the tree. All nodes we delete should be ancestors of the given node */
+        if (log_it)
+        {
+            for (node_offset_t i=first_child; i < nodes.size(); i++)
             {
-                assert(node_has_ancestor(nodes, nodes.at(node_idx), ancestor));
+                //assert(node_has_ancestor(nodes, nodes.at(i), ancestor));
+                if (! node_has_ancestor(nodes, nodes.at(i), *parent))
+                {
+                    fprintf(stderr, "Warning: node at index %u not ancestor of node %u\n", i, node_idx);
+                }
             }
         }
         
-        for (size_t i=0; i < nodes.size(); i++)
+        if (log_it)
         {
-            fprintf(stderr, "\t%2lu: %ls\n", i, nodes.at(i).describe().c_str());
+            for (size_t i=0; i < nodes.size(); i++)
+            {
+                fprintf(stderr, "\t%2lu: %ls\n", i, nodes.at(i).describe().c_str());
+            }
+        }
+
+        
+        /* Fix up the parent's children */
+        parent->child_start = 0;
+        parent->child_count = 0;
+        
+        /* Erase all nodes from first_child. Do this after fixing up the parent, because it may change parent's pointer */
+        nodes.erase(nodes.begin() + first_child, nodes.end());
+        
+        if (log_it)
+        {
+            fprintf(stderr, "After erasing:\n");
+            for (size_t i=0; i < nodes.size(); i++)
+            {
+                fprintf(stderr, "\t%2lu: %ls\n", i, nodes.at(i).describe().c_str());
+            }
         }
         
-        /* Erase all nodes from node_idx on */
-        nodes.erase(nodes.begin() + node_idx, nodes.end());
+        /* Fix up the children */
+        parse_node_t *telescoped_node = &nodes.at(node_idx);
+        telescoped_node->child_start = 0;
+        telescoped_node->child_count = 0;
         
-        fprintf(stderr, "After erasing:\n");
-        for (size_t i=0; i < nodes.size(); i++)
+        if (log_it)
         {
-            fprintf(stderr, "\t%2lu: %ls\n", i, nodes.at(i).describe().c_str());
+            fprintf(stderr, "Stack:\n");
+            for (size_t i=0; i < symbol_stack.size(); i++)
+            {
+                fprintf(stderr, "\t%2lu: %ls\n", i, symbol_stack.at(i).describe().c_str());
+            }
         }
     }
 
@@ -580,7 +632,7 @@ class parse_ll_t
     // Pop from the top of the symbol stack, then push the given production, updating node counts. Note that production_t has type "pointer to array" so some care is required.
     inline void symbol_stack_pop_push_production(const production_t *production, parse_stack_element_t &stack_top)
     {
-        bool logit = true;
+        bool logit = false;
         if (logit)
         {
             size_t count = 0;
@@ -601,7 +653,6 @@ class parse_ll_t
 
         // Get the parent index. But we can't get the parent parse node yet, since it may be made invalid by adding children
         const node_offset_t parent_node_idx = stack_top.node_idx;
-        const bool telescope_child_jobs = should_telescope && stack_top.type == symbol_job_list;
         
         // Add the children. Confusingly, we want our nodes to be in forwards order (last token last, so dumps look nice), but the symbols should be reverse order (last token first, so it's lowest on the stack)
         const size_t child_start_big = nodes.size();
@@ -644,8 +695,24 @@ class parse_ll_t
             stack_top.wants_event = true;
         }
         
-        // Handle eventing
-        if (stack_top.telescope || stack_top.wants_event)
+        // Handle telescoping
+        bool telescope = false;
+        if (can_telescope_node_type(stack_top.type) && child_count > 0)
+        {
+            production_element_t last_elem = (*production)[child_count - 1];
+            if (production_element_type(last_elem) == stack_top.type)
+            {
+                stack_top.telescope = true;
+                telescope = true;
+            }
+        }
+        
+        // Don't pop if we are telescoping or want an event
+        if (telescope)
+        {
+            // Don't pop
+        }
+        else if (stack_top.wants_event)
         {
             // Don't pop the stack. When we get back to this element, we'll notice it's outgoing
             stack_top.outgoing = true;
@@ -659,16 +726,19 @@ class parse_ll_t
         // Push onto the top of the stack new stack elements corresponding to our new nodes. Note that these go in reverse order
         symbol_stack.reserve(symbol_stack.size() + child_count);
         node_offset_t idx = child_count;
+        
+        // If we are telescoping, it means that the last element is the same as what we would have pushed
+        // So we skip it
+        if (telescope)
+        {
+            idx--;
+        }
+        
         while (idx--)
         {
             production_element_t elem = (*production)[idx];
             PARSE_ASSERT(production_element_is_valid(elem));
             symbol_stack.push_back(parse_stack_element_t(elem, child_start + idx));
-            
-            if (telescope_child_jobs && production_element_type(elem) == symbol_job)
-            {
-                symbol_stack.back().telescope = true;
-            }
         }
     }
     
@@ -1123,6 +1193,13 @@ node_offset_t parse_ll_t::accept_tokens(parse_token_t token1, parse_token_t toke
         // Get the production for the top of the stack
         parse_stack_element_t &stack_elem = symbol_stack.back();
         
+        if (stack_elem.telescope)
+        {
+            /* Erase all the children of this stack element. */
+            telescope_children(stack_elem.node_idx);
+            stack_elem.telescope = false;
+        }
+        
         // If it's outgoing or telescoping, handle it and continue
         if (stack_elem.outgoing)
         {
@@ -1133,15 +1210,12 @@ node_offset_t parse_ll_t::accept_tokens(parse_token_t token1, parse_token_t toke
                 stack_elem.wants_event = false;
                 break;
             }
-            else if (stack_elem.telescope)
+            else
             {
-                telescope_node(stack_elem.node_idx);
+                symbol_stack.pop_back();
+                continue;
             }
-                
-            symbol_stack.pop_back();
-            continue;
         }
-        
         
         parse_node_t &node = nodes.at(stack_elem.node_idx);
         const production_t *production = production_for_token(stack_elem.type, token1, token2, &node.production_idx, NULL /* error text */);
