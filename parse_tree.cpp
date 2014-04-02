@@ -1379,8 +1379,11 @@ node_offset_t parse_pump_t::pump(parse_error_list_t *out_errors)
         /* If we got a terminate but are leaving things unterminated, then don't pass parse_token_type_terminate */
         if (queue[0].type == parse_token_type_terminate && (parse_flags & parse_flag_leave_unterminated))
         {
+            fprintf(stderr, "Skipping\n");
             break;
         }
+        
+        fprintf(stderr, "Got %ls\n", token_type_description(queue[0].type).c_str());
         
         /* Pass these two tokens, unless we're still loading the queue. We know that queue[0] is valid; queue[1] may be invalid. */
         if (tokens_consumed > 1)
@@ -1410,6 +1413,7 @@ node_offset_t parse_pump_t::pump(parse_error_list_t *out_errors)
         /* Handle errors */
         if (parser->has_fatal_error())
         {
+            fprintf(stderr, "Fatal error\n");
             if (parse_flags & parse_flag_continue_after_error)
             {
                 /* Hack hack hack. Typically the parse error is due to the first token. However, if it's a tokenizer error, then has_fatal_error was set due to the check above; in that case the second token is what matters. */
@@ -1521,6 +1525,11 @@ bool parse_tree_from_string(const wcstring &str, parse_tree_flags_t parse_flags,
     
     // Indicate if we had a fatal error
     return ! parser.has_fatal_error();
+}
+
+bool parse_pump_t::has_fatal_error() const
+{
+    return parser->has_fatal_error();
 }
 
 const parse_node_t *parse_node_tree_t::get_child(const parse_node_t &parent, node_offset_t which, parse_token_type_t expected_type) const

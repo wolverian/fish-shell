@@ -215,6 +215,8 @@ class parse_pump_t
     
     const parse_node_tree_t &parse_tree() const;
     
+    bool has_fatal_error() const;
+    
     ~parse_pump_t();
 };
 
