@@ -112,6 +112,11 @@ struct tokenizer_t
 
     */
     tokenizer_t(const wchar_t *b, tok_flags_t flags);
+    
+    void set_squash_errors(bool flag)
+    {
+        squash_errors = flag;
+    }
 };
 
 /**

@@ -60,10 +60,6 @@ enum
 
     /* Indicate that the parser should not generate the terminate token, allowing an 'unfinished' tree where some nodes may have no productions. */
     parse_flag_leave_unterminated = 1 << 3,
-    
-    /* Indicate that the parser should not generate errors */
-    parse_flag_squash_errors = 1 << 4
-
 };
 typedef unsigned int parse_tree_flags_t;
 
@@ -200,13 +196,11 @@ class parse_ll_t;
 class parse_pump_t
 {
     friend bool parse_tree_from_string(const wcstring &, parse_tree_flags_t parse_flags, parse_node_tree_t *, parse_error_list_t *, parse_token_type_t);
-    friend bool parse_tree_from_string2(const wcstring &, parse_tree_flags_t parse_flags, parse_node_tree_t *, parse_error_list_t *, parse_token_type_t);
     
     tokenizer_t tok;
     const parse_tree_flags_t parse_flags;
     const parse_token_type_t goal_type;
     parse_ll_t * const parser;
-    parse_error_list_t * const errors;
     parse_token_t queue[2];
     size_t tokens_consumed;
     
@@ -216,9 +210,8 @@ class parse_pump_t
     
     void set_event_types(const parse_token_type_t *types, size_t count);
     
-    /* Do some parsing. Returns true if we consumed something, false if we've exhausted the string. */
-    bool pump(bool consume_all);
-    node_offset_t pump();
+    /* Do some parsing. Returns a node offset if we reach a node. May also return errors by reference. */
+    node_offset_t pump(parse_error_list_t *out_errors = NULL);
     
     const parse_node_tree_t &parse_tree() const;
     

@@ -787,6 +787,15 @@ public:
         return nodes;
     }
     
+    void append_errors(parse_error_list_t *out_errors)
+    {
+        if (! errors.empty())
+        {
+            out_errors->insert(out_errors->end(), errors.begin(), errors.end());
+            errors.clear();
+        }
+    }
+    
     void set_event_node_types(const token_type_set_t &set)
     {
         event_node_types = set;
@@ -1317,9 +1326,6 @@ static tok_flags_t tokenizer_flags_from_parse_flags(parse_tree_flags_t parse_fla
     if (parse_flags & parse_flag_accept_incomplete_tokens)
         tok_options |= TOK_ACCEPT_UNFINISHED;
     
-    if (parse_flags & parse_flag_squash_errors)
-        tok_options |= TOK_SQUASH_ERRORS;
-    
     return tok_options;
 }
 
@@ -1328,10 +1334,8 @@ parse_pump_t::parse_pump_t(const wcstring &str, parse_tree_flags_t flags, parse_
     parse_flags(flags),
     goal_type(goal),
     parser(new parse_ll_t(goal)),
-    errors((flags & parse_flag_squash_errors) ? NULL : new parse_error_list_t()),
     tokens_consumed(0)
 {
-    parser->set_should_generate_error_messages(! (flags & parse_flag_squash_errors));
     parser->set_telescope(true);
     queue[0] = kInvalidToken;
     queue[1] = kInvalidToken;
@@ -1340,10 +1344,6 @@ parse_pump_t::parse_pump_t(const wcstring &str, parse_tree_flags_t flags, parse_
 parse_pump_t::~parse_pump_t()
 {
     delete parser;
-    if (errors != NULL)
-    {
-        delete errors;
-    }
 }
 
 const parse_node_tree_t &parse_pump_t::parse_tree() const
@@ -1351,8 +1351,11 @@ const parse_node_tree_t &parse_pump_t::parse_tree() const
     return parser->peek_tree();
 }
 
-node_offset_t parse_pump_t::pump()
+node_offset_t parse_pump_t::pump(parse_error_list_t *out_errors)
 {
+    tok.set_squash_errors(out_errors == NULL);
+    parser->set_should_generate_error_messages(out_errors != NULL);
+    
     node_offset_t result = NODE_OFFSET_INVALID;
     for (size_t loop_count = 0; result == NODE_OFFSET_INVALID; loop_count++)
     {
@@ -1398,6 +1401,12 @@ node_offset_t parse_pump_t::pump()
             parser->report_tokenizer_error(queue[1], tok_get_error(&tok), tok_last(&tok));
         }
         
+        /* Append any errors */
+        if (out_errors != NULL)
+        {
+            parser->append_errors(out_errors);
+        }
+        
         /* Handle errors */
         if (parser->has_fatal_error())
         {
@@ -1429,68 +1438,6 @@ void parse_pump_t::set_event_types(const parse_token_type_t *types, size_t count
         set.set(types[i], true);
     }
     this->parser->set_event_node_types(set);
-}
-
-bool parse_pump_t::pump(bool consume_all)
-{
-    /* Loop until we have a terminal token. */
-    const size_t initial_tokens_consumed = tokens_consumed;
-    while (queue[0].type != parse_token_type_terminate)
-    {
-        /* Push a new token onto the queue */
-        queue[0] = queue[1];
-        queue[1] = next_parse_token(&tok);
-        
-        /* If we are leaving things unterminated, then don't pass parse_token_type_terminate */
-        if (queue[0].type == parse_token_type_terminate && (parse_flags & parse_flag_leave_unterminated))
-        {
-            break;
-        }
-        
-        /* Pass these two tokens, unless we're still loading the queue. We know that queue[0] is valid; queue[1] may be invalid. Loop until we don't get an event */
-        if (tokens_consumed > 0)
-        {
-            parser->accept_tokens(queue[0], queue[1]);
-        }
-        
-        /* Handle tokenizer errors. This is a hack because really the parser should report this for itself; but it has no way of getting the tokenizer message */
-        if (queue[1].type == parse_special_type_tokenizer_error)
-        {
-            parser->report_tokenizer_error(queue[1], tok_get_error(&tok), tok_last(&tok));
-        }
-        
-        /* Note that we consumed this token */
-        tokens_consumed++;
-        
-        /* Handle errors */
-        if (parser->has_fatal_error())
-        {
-            if (parse_flags & parse_flag_continue_after_error)
-            {
-                /* Hack hack hack. Typically the parse error is due to the first token. However, if it's a tokenizer error, then has_fatal_error was set due to the check above; in that case the second token is what matters. */
-                size_t error_token_idx = (queue[1].type == parse_special_type_tokenizer_error ? 1 : 0);
-                
-                /* Mark a special error token, and then keep going */
-                const parse_token_t token = {parse_special_type_parse_error, parse_keyword_none, false, false, queue[error_token_idx].source_start, queue[error_token_idx].source_length};
-                parser->accept_tokens(token, kInvalidToken);
-                parser->reset_symbols(goal_type);
-            }
-            else
-            {
-                /* Bail out */
-                break;
-            }
-        }
-        
-        /* If we should only consume one token, then jump */
-        if (! consume_all)
-        {
-            break;
-        }
-    }
-    
-    /* Return true if we consumed at least one */
-    return tokens_consumed > initial_tokens_consumed;
 }
 
 bool parse_tree_from_string(const wcstring &str, parse_tree_flags_t parse_flags, parse_node_tree_t *output, parse_error_list_t *errors, parse_token_type_t goal)
@@ -1574,37 +1521,6 @@ bool parse_tree_from_string(const wcstring &str, parse_tree_flags_t parse_flags,
     
     // Indicate if we had a fatal error
     return ! parser.has_fatal_error();
-}
-
-bool parse_tree_from_string2(const wcstring &str, parse_tree_flags_t parse_flags, parse_node_tree_t *output, parse_error_list_t *errors, parse_token_type_t goal)
-{
-    
-    if (errors == NULL)
-        parse_flags |= parse_flag_squash_errors;
-    
-    parse_pump_t pump(str, parse_flags, goal);
-    for (;;)
-    {
-        if (! pump.pump(false))
-        {
-            break;
-        }
-    }
-
-    // Teach each node where its source range is
-    pump.parser->determine_node_ranges();
-
-    // Acquire the output from the parser
-    pump.parser->acquire_output(output, errors);
-
-#if 0
-    //wcstring result = dump_tree(this->parser->nodes, str);
-    //fprintf(stderr, "Tree (%ld nodes):\n%ls", this->parser->nodes.size(), result.c_str());
-    fprintf(stderr, "%lu nodes, node size %lu, %lu bytes\n", output->size(), sizeof(parse_node_t), output->size() * sizeof(parse_node_t));
-#endif
-
-    // Indicate if we had a fatal error
-    return ! pump.parser->has_fatal_error();
 }
 
 const parse_node_t *parse_node_tree_t::get_child(const parse_node_t &parent, node_offset_t which, parse_token_type_t expected_type) const
