@@ -204,6 +204,24 @@ class parse_pump_t
     parse_token_t queue[2];
     size_t tokens_consumed;
     
+    enum parse_pump_state_t
+    {
+        state_initial_0,
+        state_initial_1,
+        state_received_event,
+        state_no_event,
+        state_draining_final_events,
+        state_complete
+    };
+    enum parse_pump_state_t state;
+    
+    struct pump_internal_result_t
+    {
+        node_offset_t node;
+        bool success;
+    };
+    pump_internal_result_t pump_internal(bool second_pass, parse_error_list_t *out_errors);
+    
     public:
     
     parse_pump_t(const wcstring &str, parse_tree_flags_t flags, parse_token_type_t goal = symbol_job_list);
