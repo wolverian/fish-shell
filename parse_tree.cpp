@@ -787,7 +787,7 @@ public:
         return nodes;
     }
     
-    void append_errors(parse_error_list_t *out_errors)
+    void acquire_and_append_errors(parse_error_list_t *out_errors)
     {
         if (! errors.empty())
         {
@@ -1352,38 +1352,29 @@ const parse_node_tree_t &parse_pump_t::parse_tree() const
     return parser->peek_tree();
 }
 
-parse_pump_t::pump_internal_result_t parse_pump_t::pump_internal(bool dequeue_from_tokenizer, parse_error_list_t *out_errors)
+#if 1
+
+// Attempts to dequeue a token. Returns true if successful.
+bool parse_pump_t::dequeue_1_token()
 {
-    pump_internal_result_t result = {NODE_OFFSET_INVALID, true};
-    
-    /* Push a new token onto the queue if this is either the first or second invocation (so the queue is empty), or the second time through the loop. On the first time through the loop, we may exit early due to getting an event. */
-    if (dequeue_from_tokenizer || tokens_consumed <= 1)
+    /* Never dequeue past a parser error */
+    if (parser->has_fatal_error())
     {
-        // Push a new token onto the queue
-        queue[0] = queue[1];
-        queue[1] = next_parse_token(&tok);
-        
-        /* Note that we consumed this token */
-        tokens_consumed++;
+        return false;
     }
     
-    /* If we got a terminate but are leaving things unterminated, then don't pass parse_token_type_terminate */
-    if (queue[0].type == parse_token_type_terminate && (parse_flags & parse_flag_leave_unterminated))
+    /* Never dequeue past terminate at the beginning of our queue */
+    if (queue[0].type == parse_token_type_terminate)
     {
-        return result;
+        return false;
     }
     
-    /* Pass these two tokens, unless we're still loading the queue. We know that queue[0] is valid; queue[1] may be invalid. If we get a result, return it immediately. */
-    if (tokens_consumed > 1)
-    {
-        node_offset_t eventNode = parser->accept_tokens(queue[0], queue[1]);
-        if (eventNode != NODE_OFFSET_INVALID)
-        {
-            parser->determine_node_ranges(eventNode);
-            result.node = eventNode;
-            return result;
-        }
-    }
+    /* Push a new token onto the queue */
+    queue[0] = queue[1];
+    queue[1] = next_parse_token(&tok);
+    
+    /* Note that we consumed this token */
+    tokens_consumed++;
     
     /* Handle tokenizer errors. This is a hack because really the parser should report this for itself; but it has no way of getting the tokenizer message */
     if (queue[1].type == parse_special_type_tokenizer_error)
@@ -1391,36 +1382,57 @@ parse_pump_t::pump_internal_result_t parse_pump_t::pump_internal(bool dequeue_fr
         parser->report_tokenizer_error(queue[1], tok_get_error(&tok), tok_last(&tok));
     }
     
+    return true;
+
+}
+
+node_offset_t parse_pump_t::pump(parse_error_list_t *out_errors)
+{
+    tok.set_squash_errors(out_errors == NULL);
+    parser->set_should_generate_error_messages(out_errors != NULL);
+
+    // Fill up our queue
+    while (tokens_consumed < 2)
+    {
+        this->dequeue_1_token();
+    }
+    
+    node_offset_t result = NODE_OFFSET_INVALID;
+    for (;;)
+    {
+    
+        /* If we got a terminate but are leaving things unterminated, then don't pass parse_token_type_terminate */
+        if (queue[0].type == parse_token_type_terminate && (parse_flags & parse_flag_leave_unterminated))
+        {
+            break;
+        }
+
+    
+        result = this->apply_token();
+        if (result != NODE_OFFSET_INVALID)
+        {
+            break;
+        }
+        
+        if (! this->dequeue_1_token())
+        {
+            break;
+        }
+    }
+    
+    if (result != NODE_OFFSET_INVALID)
+    {
+        parser->determine_node_ranges(result);
+    }
+    
     /* Append any errors */
     if (out_errors != NULL)
     {
-        parser->append_errors(out_errors);
+        parser->acquire_and_append_errors(out_errors);
     }
     
-    /* Handle fatal errors */
-    if (parser->has_fatal_error())
-    {
-        if (parse_flags & parse_flag_continue_after_error)
-        {
-            /* Hack hack hack. Typically the parse error is due to the first token. However, if it's a tokenizer error, then has_fatal_error was set due to the check above; in that case the second token is what matters. */
-            size_t error_token_idx = (queue[1].type == parse_special_type_tokenizer_error ? 1 : 0);
-            
-            /* Mark a special error token, and then keep going */
-            const parse_token_t token = {parse_special_type_parse_error, parse_keyword_none, false, false, queue[error_token_idx].source_start, queue[error_token_idx].source_length};
-            parser->accept_tokens(token, kInvalidToken);
-            parser->reset_symbols(goal_type);
-        }
-        else
-        {
-            result.success = false;
-        }
-    }
     return result;
 }
-
-#if 1
-
-
 
 #else
 node_offset_t parse_pump_t::pump(parse_error_list_t *out_errors)
@@ -1451,7 +1463,6 @@ node_offset_t parse_pump_t::pump(parse_error_list_t *out_errors)
         /* If we got a terminate but are leaving things unterminated, then don't pass parse_token_type_terminate */
         if (queue[0].type == parse_token_type_terminate && (parse_flags & parse_flag_leave_unterminated))
         {
-            fprintf(stderr, "Skipping\n");
             break;
         }
         
@@ -1479,13 +1490,12 @@ node_offset_t parse_pump_t::pump(parse_error_list_t *out_errors)
         /* Append any errors */
         if (out_errors != NULL)
         {
-            parser->append_errors(out_errors);
+            parser->acquire_and_append_errors(out_errors);
         }
         
         /* Handle errors */
         if (parser->has_fatal_error())
         {
-            fprintf(stderr, "Fatal error\n");
             if (parse_flags & parse_flag_continue_after_error)
             {
                 /* Hack hack hack. Typically the parse error is due to the first token. However, if it's a tokenizer error, then has_fatal_error was set due to the check above; in that case the second token is what matters. */
