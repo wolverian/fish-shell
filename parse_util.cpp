@@ -1410,6 +1410,122 @@ parser_test_error_bits_t parse_util_detect_errors2(const wcstring &buff_src, par
     return res;
 }
 
+/* Detects errors in a plain statement node. Returns true if an error was found, false if not */
+static parser_test_error_bits_t detect_errors_in_plain_statement(const parse_node_tree_t &node_tree, const parse_node_t &node, const wcstring &buff_src, parse_error_list_t *parse_errors)
+{
+    assert(node.type == symbol_plain_statement);
+    
+    // Whether we encountered a parse error
+    bool errored = false;
+    
+    // In a few places below, we want to know if we are in a pipeline
+    const bool is_in_pipeline = node_tree.statement_is_in_pipeline(node, true /* count first */);
+    
+    // We need to know the decoration
+    const enum parse_statement_decoration_t decoration = node_tree.decoration_for_plain_statement(node);
+    
+    // Check that we don't try to pipe through exec
+    if (is_in_pipeline && decoration == parse_statement_decoration_exec)
+    {
+        errored = append_syntax_error(parse_errors, node, EXEC_ERR_MSG, L"exec");
+    }
+    
+    wcstring command;
+    if (node_tree.command_for_plain_statement(node, buff_src, &command))
+    {
+        // Check that we can expand the command
+        if (! expand_one(command, EXPAND_SKIP_CMDSUBST | EXPAND_SKIP_VARIABLES | EXPAND_SKIP_JOBS, NULL))
+        {
+            // TODO: leverage the resulting errors
+            errored = append_syntax_error(parse_errors, node, ILLEGAL_CMD_ERR_MSG, command.c_str());
+        }
+        
+        // Check that it doesn't contain a variable
+        // Note this check is clumsy (it doesn't allow for escaping) but it matches what we do in parse_execution
+        if (command.find(L'$') != wcstring::npos)
+        {
+            errored = append_syntax_error(parse_errors, node, ILLEGAL_CMD_ERR_MSG, command.c_str());
+        }
+        
+        // Check that pipes are sound
+        if (! errored && parser_is_pipe_forbidden(command) && is_in_pipeline)
+        {
+            errored = append_syntax_error(parse_errors, node, EXEC_ERR_MSG, command.c_str());
+        }
+        
+        // Check that we don't return from outside a function
+        // But we allow it if it's 'return --help'
+        if (! errored && command == L"return")
+        {
+            const parse_node_t *ancestor = &node;
+            bool found_function = false;
+            while (ancestor != NULL)
+            {
+                const parse_node_t *possible_function_header = node_tree.header_node_for_block_statement(*ancestor);
+                if (possible_function_header != NULL && possible_function_header->type == symbol_function_header)
+                {
+                    found_function = true;
+                    break;
+                }
+                ancestor = node_tree.get_parent(*ancestor);
+                
+            }
+            if (! found_function && ! first_argument_is_help(node_tree, node, buff_src))
+            {
+                errored = append_syntax_error(parse_errors, node, INVALID_RETURN_ERR_MSG);
+            }
+        }
+        
+        // Check that we don't break or continue from outside a loop
+        if (! errored && (command == L"break" || command == L"continue"))
+        {
+            // Walk up until we hit a 'for' or 'while' loop. If we hit a function first, stop the search; we can't break an outer loop from inside a function.
+            // This is a little funny because we can't tell if it's a 'for' or 'while' loop from the ancestor alone; we need the header. That is, we hit a block_statement, and have to check its header.
+            bool found_loop = false, end_search = false;
+            const parse_node_t *ancestor = &node;
+            while (ancestor != NULL && ! end_search)
+            {
+                const parse_node_t *loop_or_function_header = node_tree.header_node_for_block_statement(*ancestor);
+                if (loop_or_function_header != NULL)
+                {
+                    switch (loop_or_function_header->type)
+                    {
+                        case symbol_while_header:
+                        case symbol_for_header:
+                            // this is a loop header, so we can break or continue
+                            found_loop = true;
+                            end_search = true;
+                            break;
+                            
+                        case symbol_function_header:
+                            // this is a function header, so we cannot break or continue. We stop our search here.
+                            found_loop = false;
+                            end_search = true;
+                            break;
+                            
+                        default:
+                            // most likely begin / end style block, which makes no difference
+                            break;
+                    }
+                }
+                ancestor = node_tree.get_parent(*ancestor);
+            }
+            
+            if (! found_loop && ! first_argument_is_help(node_tree, node, buff_src))
+            {
+                errored = append_syntax_error(parse_errors, node, (command == L"break" ? INVALID_BREAK_ERR_MSG : INVALID_CONTINUE_ERR_MSG));
+            }
+        }
+        
+        // Check that we don't do an invalid builtin (#1252)
+        if (! errored && decoration == parse_statement_decoration_builtin && ! builtin_exists(command))
+        {
+            errored = append_syntax_error(parse_errors, node, UNKNOWN_BUILTIN_ERR_MSG, command.c_str());
+        }
+    }
+    
+    return errored ? PARSER_TEST_ERROR : 0;
+}
 
 parser_test_error_bits_t parse_util_detect_errors(const wcstring &buff_src, parse_error_list_t *out_errors)
 {
@@ -1464,116 +1580,15 @@ parser_test_error_bits_t parse_util_detect_errors(const wcstring &buff_src, pars
         }
         else if (node.type == symbol_job)
         {
-            parse_node_list_t specific_statements_for_job(const parse_node_t &job) const
-        }
-        else if (node.type == symbol_plain_statement)
-        {
-            // In a few places below, we want to know if we are in a pipeline
-            const bool is_in_pipeline = node_tree.statement_is_in_pipeline(node, true /* count first */);
-
-            // We need to know the decoration
-            const enum parse_statement_decoration_t decoration = node_tree.decoration_for_plain_statement(node);
+            // Check each plain statement to see if it is in a pipeline
+            // Note that we do this with a job event, and not with a plain_statement event, because the plain_statement won't be able to find statements in the pipeline
+            const parse_node_tree_t::parse_node_list_t plain_statements = node_tree.find_nodes(node, symbol_plain_statement);
+            size_t count = plain_statements.size();
+            for (size_t i=0; i < count; i++)
+            {
+                res |= detect_errors_in_plain_statement(node_tree, *plain_statements.at(i), buff_src, &parse_errors);
+            }
             
-            // Check that we don't try to pipe through exec
-            if (is_in_pipeline && decoration == parse_statement_decoration_exec)
-            {
-                errored = append_syntax_error(&parse_errors, node, EXEC_ERR_MSG, L"exec");
-            }
-
-            wcstring command;
-            if (node_tree.command_for_plain_statement(node, buff_src, &command))
-            {
-                // Check that we can expand the command
-                if (! expand_one(command, EXPAND_SKIP_CMDSUBST | EXPAND_SKIP_VARIABLES | EXPAND_SKIP_JOBS, NULL))
-                {
-                    // TODO: leverage the resulting errors
-                    errored = append_syntax_error(&parse_errors, node, ILLEGAL_CMD_ERR_MSG, command.c_str());
-                }
-
-                // Check that it doesn't contain a variable
-                // Note this check is clumsy (it doesn't allow for escaping) but it matches what we do in parse_execution
-                if (command.find(L'$') != wcstring::npos)
-                {
-                    errored = append_syntax_error(&parse_errors, node, ILLEGAL_CMD_ERR_MSG, command.c_str());
-                }
-
-                // Check that pipes are sound
-                if (! errored && parser_is_pipe_forbidden(command) && is_in_pipeline)
-                {
-                    errored = append_syntax_error(&parse_errors, node, EXEC_ERR_MSG, command.c_str());
-                }
-
-                // Check that we don't return from outside a function
-                // But we allow it if it's 'return --help'
-                if (! errored && command == L"return")
-                {
-                    const parse_node_t *ancestor = &node;
-                    bool found_function = false;
-                    while (ancestor != NULL)
-                    {
-                        const parse_node_t *possible_function_header = node_tree.header_node_for_block_statement(*ancestor);
-                        if (possible_function_header != NULL && possible_function_header->type == symbol_function_header)
-                        {
-                            found_function = true;
-                            break;
-                        }
-                        ancestor = node_tree.get_parent(*ancestor);
-
-                    }
-                    if (! found_function && ! first_argument_is_help(node_tree, node, buff_src))
-                    {
-                        errored = append_syntax_error(&parse_errors, node, INVALID_RETURN_ERR_MSG);
-                    }
-                }
-
-                // Check that we don't break or continue from outside a loop
-                if (! errored && (command == L"break" || command == L"continue"))
-                {
-                    // Walk up until we hit a 'for' or 'while' loop. If we hit a function first, stop the search; we can't break an outer loop from inside a function.
-                    // This is a little funny because we can't tell if it's a 'for' or 'while' loop from the ancestor alone; we need the header. That is, we hit a block_statement, and have to check its header.
-                    bool found_loop = false, end_search = false;
-                    const parse_node_t *ancestor = &node;
-                    while (ancestor != NULL && ! end_search)
-                    {
-                        const parse_node_t *loop_or_function_header = node_tree.header_node_for_block_statement(*ancestor);
-                        if (loop_or_function_header != NULL)
-                        {
-                            switch (loop_or_function_header->type)
-                            {
-                                case symbol_while_header:
-                                case symbol_for_header:
-                                    // this is a loop header, so we can break or continue
-                                    found_loop = true;
-                                    end_search = true;
-                                    break;
-
-                                case symbol_function_header:
-                                    // this is a function header, so we cannot break or continue. We stop our search here.
-                                    found_loop = false;
-                                    end_search = true;
-                                    break;
-
-                                default:
-                                    // most likely begin / end style block, which makes no difference
-                                    break;
-                            }
-                        }
-                        ancestor = node_tree.get_parent(*ancestor);
-                    }
-
-                    if (! found_loop && ! first_argument_is_help(node_tree, node, buff_src))
-                    {
-                        errored = append_syntax_error(&parse_errors, node, (command == L"break" ? INVALID_BREAK_ERR_MSG : INVALID_CONTINUE_ERR_MSG));
-                    }
-                }
-
-                // Check that we don't do an invalid builtin (#1252)
-                if (! errored && decoration == parse_statement_decoration_builtin && ! builtin_exists(command))
-                {
-                    errored = append_syntax_error(&parse_errors, node, UNKNOWN_BUILTIN_ERR_MSG, command.c_str());
-                }
-
-            }
         }
     }
     
