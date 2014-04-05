@@ -1427,7 +1427,7 @@ parser_test_error_bits_t parse_util_detect_errors(const wcstring &buff_src, pars
     bool has_unclosed_quote = false;
 
     parse_pump_t pump(buff_src, parse_flag_leave_unterminated);
-    const parse_token_type_t types[] = {symbol_end_command, symbol_boolean_statement, symbol_argument, symbol_plain_statement};
+    const parse_token_type_t types[] = {symbol_end_command, symbol_job, symbol_boolean_statement, symbol_argument, symbol_plain_statement};
     pump.set_event_types(types, sizeof types / sizeof *types);
     
     // Parse the input string into a parse tree
@@ -1462,6 +1462,10 @@ parser_test_error_bits_t parse_util_detect_errors(const wcstring &buff_src, pars
             const wcstring arg_src = node.get_source(buff_src);
             res |= parse_util_detect_errors_in_argument(node, arg_src, &parse_errors);
         }
+        else if (node.type == symbol_job)
+        {
+            parse_node_list_t specific_statements_for_job(const parse_node_t &job) const
+        }
         else if (node.type == symbol_plain_statement)
         {
             // In a few places below, we want to know if we are in a pipeline
@@ -1469,7 +1473,7 @@ parser_test_error_bits_t parse_util_detect_errors(const wcstring &buff_src, pars
 
             // We need to know the decoration
             const enum parse_statement_decoration_t decoration = node_tree.decoration_for_plain_statement(node);
-
+            
             // Check that we don't try to pipe through exec
             if (is_in_pipeline && decoration == parse_statement_decoration_exec)
             {
@@ -1591,7 +1595,7 @@ parser_test_error_bits_t parse_util_detect_errors(const wcstring &buff_src, pars
     }
     
     errored = ! parse_errors.empty();
-
+    
     if (errored)
         res |= PARSER_TEST_ERROR;
 

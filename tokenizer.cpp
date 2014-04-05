@@ -133,7 +133,7 @@ int tok_has_next(tokenizer_t *tok)
     CHECK(tok->buff, 1);
 
     /*  fwprintf( stderr, L"has_next is %ls \n", tok->has_next?L"true":L"false" );*/
-    return   tok->has_next;
+    return tok->has_next;
 }
 
 int tokenizer_t::line_number_of_character_at_offset(size_t offset)

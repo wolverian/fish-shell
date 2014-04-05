@@ -314,7 +314,10 @@ wcstring parse_node_t::describe(void) const
     wcstring result = token_type_description(type);
     append_format(result, L" (parent %u)", this->parent);
     append_format(result, L" (prod %d)", this->production_idx);
-    if (child_count > 0)
+    if (child_count == 1) {
+        append_format(result, L" (child %u)", this->child_start);
+    }
+    else if (child_count > 1)
     {
         append_format(result, L" (child %u-%u)", this->child_start, this->child_start + this->child_count - 1);
     }
@@ -411,10 +414,6 @@ static void dump_tree_recursive(const parse_node_tree_t &nodes, const wcstring &
     append_format(*result, L"%2lu - %l2u  ", *line, node_idx);
     result->append(indent * spacesPerIndent, L' ');;
     result->append(node.describe());
-    if (node.child_count > 0)
-    {
-        append_format(*result, L" <%lu children>", node.child_count);
-    }
 
     if (node.has_source() && node.type == parse_token_type_string)
     {
@@ -754,6 +753,9 @@ public:
 
     /* Input */
     node_offset_t accept_tokens(parse_token_t token1, parse_token_t token2);
+    
+    /* Unwinds the stack, returning any outgoing events */
+    node_offset_t unwind_outgoing_stack();
     
     /* Report tokenizer errors */
     void report_tokenizer_error(parse_token_t token, int tok_err, const wchar_t *tok_error);
@@ -1158,7 +1160,7 @@ node_offset_t parse_ll_t::accept_tokens(parse_token_t token1, parse_token_t toke
     bool logit = false;
     if (logit)
     {
-        fprintf(stderr, "Accept token %ls\n", token1.describe().c_str());
+        fprintf(stderr, "Accept token %ls | %ls\n", token1.describe().c_str(), token2.describe().c_str());
     }
     PARSE_ASSERT(token1.type >= FIRST_PARSE_TOKEN_TYPE);
 
@@ -1176,9 +1178,21 @@ node_offset_t parse_ll_t::accept_tokens(parse_token_t token1, parse_token_t toke
         nodes.push_back(err_node);
         consumed = true;
 
+        /* If we want an event, push an immediately outgoing stack element for this type */
+        if (wants_events_for_node_type(token1.type))
+        {
+            assert(nodes.size() > 0);
+            parse_stack_element_t element(token1.type, static_cast<node_offset_t>(nodes.size() - 1));
+            element.wants_event = true;
+            element.outgoing = true;
+            symbol_stack.push_back(element);
+        }
+
         /* tokenizer errors are fatal */
         if (token1.type == parse_special_type_tokenizer_error)
+        {
             this->fatal_errored = true;
+        }
     }
 
     while (! consumed && event_node == NODE_OFFSET_INVALID && ! this->fatal_errored)
@@ -1261,6 +1275,27 @@ node_offset_t parse_ll_t::accept_tokens(parse_token_t token1, parse_token_t toke
     return event_node;
 }
 
+node_offset_t parse_ll_t::unwind_outgoing_stack()
+{
+    // Called when parsing is complete.
+    // We unwind the outgoing stack, handling outgoing nodes only
+    node_offset_t event_node = NODE_OFFSET_INVALID;
+    while (event_node == NODE_OFFSET_INVALID && ! symbol_stack.empty())
+    {
+        const parse_stack_element_t &stack_elem = symbol_stack.back();
+        if (wants_events_for_node_type(stack_elem.type))
+        {
+            event_node = stack_elem.node_idx;
+        }
+        
+        // Note that we pop even if we got an event
+        // That way, next time through we won't repeat this event
+        symbol_stack.pop_back();
+    }
+    return event_node;
+    
+}
+
 static parse_keyword_t keyword_for_token(token_type tok, const wchar_t *tok_txt)
 {
     parse_keyword_t result = parse_keyword_none;
@@ -1300,7 +1335,7 @@ static inline parse_token_t next_parse_token(tokenizer_t *tok)
     token_type tok_type = static_cast<token_type>(tok_last_type(tok));
     int tok_start = tok_get_pos(tok);
     size_t tok_extent = tok_get_extent(tok);
-    assert(tok_extent < 10000000); //paranoia
+    assert(tok_extent < UINT_MAX); //paranoia
     const wchar_t *tok_txt = tok_last(tok);
 
     parse_token_t result;
@@ -1334,8 +1369,7 @@ parse_pump_t::parse_pump_t(const wcstring &str, parse_tree_flags_t flags, parse_
     parse_flags(flags),
     goal_type(goal),
     parser(new parse_ll_t(goal)),
-    tokens_consumed(0),
-    state(state_initial_0)
+    tokens_consumed(0)
 {
     parser->set_telescope(true);
     queue[0] = kInvalidToken;
@@ -1357,13 +1391,10 @@ const parse_node_tree_t &parse_pump_t::parse_tree() const
 // Attempts to dequeue a token. Returns true if successful.
 bool parse_pump_t::dequeue_1_token()
 {
-    /* Never dequeue past a parser error */
-    if (parser->has_fatal_error())
-    {
-        return false;
-    }
+    /* Should never dequeue if there is a fatal error */
+    assert(! parser->has_fatal_error());
     
-    /* Never dequeue past terminate at the beginning of our queue */
+    /* When terminate reaches the beginning of our queue, we're done */
     if (queue[0].type == parse_token_type_terminate)
     {
         return false;
@@ -1376,12 +1407,6 @@ bool parse_pump_t::dequeue_1_token()
     /* Note that we consumed this token */
     tokens_consumed++;
     
-    /* Handle tokenizer errors. This is a hack because really the parser should report this for itself; but it has no way of getting the tokenizer message */
-    if (queue[1].type == parse_special_type_tokenizer_error)
-    {
-        parser->report_tokenizer_error(queue[1], tok_get_error(&tok), tok_last(&tok));
-    }
-    
     return true;
 
 }
@@ -1390,38 +1415,71 @@ node_offset_t parse_pump_t::pump(parse_error_list_t *out_errors)
 {
     tok.set_squash_errors(out_errors == NULL);
     parser->set_should_generate_error_messages(out_errors != NULL);
-
-    // Fill up our queue
-    while (tokens_consumed < 2)
-    {
-        this->dequeue_1_token();
-    }
     
     node_offset_t result = NODE_OFFSET_INVALID;
     for (;;)
     {
-    
-        /* If we got a terminate but are leaving things unterminated, then don't pass parse_token_type_terminate */
-        if (queue[0].type == parse_token_type_terminate && (parse_flags & parse_flag_leave_unterminated))
+        if (! parser->has_fatal_error())
         {
-            break;
-        }
+            // If we got a terminate but are leaving things unterminated, then don't pass parse_token_type_terminate
+            // Also note that we don't calculate node ranges here, since they won't exist!
+            if (queue[0].type == parse_token_type_terminate && (parse_flags & parse_flag_leave_unterminated))
+            {
+                result = parser->unwind_outgoing_stack();
+                break;
+            }
 
-    
-        result = this->apply_token();
-        if (result != NODE_OFFSET_INVALID)
-        {
-            break;
+            // Apply our queue if we have dequeued sufficiently many tokens
+            if (tokens_consumed >= 2)
+            {
+                result = parser->accept_tokens(queue[0], queue[1]);
+                if (result != NODE_OFFSET_INVALID)
+                {
+                    // We got back an event; exit the loop
+                    break;
+                }
+            }
+        
+            // We did not get a result above (or we would have existed the loop).
+            // If we did not get an error either, then it means the parser is done with our input.
+            // So dequeue so we'll have more input. Note that dequeing may trigger an error.
+            if (! parser->has_fatal_error())
+            {
+                if (! this->dequeue_1_token())
+                {
+                    // Nothing more to dequeue, we're done
+                    break;
+                }
+            }
+            
+            /* Handle tokenizer errors. This is a hack because really the parser should report this for itself; but it has no way of getting the tokenizer message */
+            if (queue[1].type == parse_special_type_tokenizer_error)
+            {
+                parser->report_tokenizer_error(queue[1], tok_get_error(&tok), tok_last(&tok));
+            }
         }
         
-        if (! this->dequeue_1_token())
+        if (parser->has_fatal_error())
         {
-            break;
+            if (parse_flags & parse_flag_continue_after_error)
+            {
+                /* Hack hack hack. Typically the parse error is due to the first token. However, if it's a tokenizer error, then has_fatal_error was set in dequeueing in that case the second token is what matters. */
+                const parse_token_t &error_token = (queue[1].type == parse_special_type_tokenizer_error ? queue[1] : queue[0]);
+
+                /* Mark a special error token, and then keep going */
+                const parse_token_t token = {parse_special_type_parse_error, parse_keyword_none, false, false, error_token.source_start, error_token.source_length};
+                parser->accept_tokens(token, kInvalidToken);
+                parser->reset_symbols(goal_type);
+            }
+            else
+            {
+                /* Bail out */
+                break;
+            }
         }
     }
     
-    if (result != NODE_OFFSET_INVALID)
-    {
+    if (result != NODE_OFFSET_INVALID) {
         parser->determine_node_ranges(result);
     }
     
@@ -1477,7 +1535,7 @@ node_offset_t parse_pump_t::pump(parse_error_list_t *out_errors)
         /* If we got a result, we're going to return it immediately */
         if (result != NODE_OFFSET_INVALID)
         {
-            parser->determine_node_ranges(result);
+            parser->determine_node_ranges();
             break;
         }
         

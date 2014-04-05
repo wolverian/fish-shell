@@ -533,13 +533,6 @@ static void test_parser()
 {
     say(L"Testing parser");
     
-    if (!parse_util_detect_errors(L"if test; echo"))
-    {
-        err(L"Missing end undetected");
-    }
-    _exit(0);
-
-
     parser_t parser(PARSER_TYPE_GENERAL, true);
 
     say(L"Testing block nesting");
