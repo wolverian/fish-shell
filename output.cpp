@@ -418,7 +418,7 @@ int writeb(tputs_arg_t b)
     return 0;
 }
 
-int writembs_internal(char *str)
+int writembs_internal(const char *str)
 {
     CHECK(str, 1);
 

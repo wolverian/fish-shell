@@ -80,7 +80,7 @@ void set_color(rgb_color_t c, rgb_color_t c2);
  */
 #define writembs( mbs )                         \
         {                                       \
-                char *tmp = mbs;                \
+                const char *tmp = mbs;                \
                 if( tmp )        \
                 {          \
                         writembs_internal( tmp );      \
@@ -104,7 +104,7 @@ void set_color(rgb_color_t c, rgb_color_t c2);
    as the sending function. But a weird bug on PPC Linux means that on
    this platform, write is instead used directly.
 */
-int writembs_internal(char *str);
+int writembs_internal(const char *str);
 
 /**
    Write a wide character using the output method specified using output_set_writer().

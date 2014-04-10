@@ -72,7 +72,7 @@ int tputs(const char *str, int affcnt, int (*fish_putc)(tputs_arg_t))
 /**
    Checks for known string values and maps to correct number of parameters.
 */
-char *tparm_solaris_kludge(char *str, ...)
+char *tparm_solaris_kludge(const char *str, ...)
 {
     long int param[9] = { };
 
